@@ -3,6 +3,17 @@
 A gamified, ADHD-friendly productivity app with a D&D tavern theme. Turn chores into quests,
 build streaks, ride out urges, and level a hero — all offline, on-device.
 
+<img width="448" height="1000" alt="image" src="https://github.com/user-attachments/assets/18c6f05b-77a4-460f-a308-ddd567dd7ffa" />
+<img width="448" height="1000" alt="image" src="https://github.com/user-attachments/assets/c676232d-9b1a-4fcb-aa92-f3c3913b94c9" />
+<img width="448" height="1000" alt="image" src="https://github.com/user-attachments/assets/731e4b10-7bdc-4f06-8ac4-5bbb41bb5b5b" />
+<img width="448" height="1000" alt="image" src="https://github.com/user-attachments/assets/62c9e9aa-617e-498c-b985-c9f9d70d0f82" />
+<img width="448" height="1000" alt="image" src="https://github.com/user-attachments/assets/201292f3-c6a7-461f-9d08-9aead11d731c" />
+
+
+
+
+
+
 > Package id: `com.focuspet.app` · minSdk 26 · targetSdk 35 · Jetpack Compose + Room
 
 ## Features
