@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+
+# Local, machine-specific config (contains your absolute SDK path — never commit)
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.cxx/
+captures/
+
+# Signing / secrets (never commit keys)
+*.jks
+*.keystore
+keystore.properties
+
+# Build artifacts
+*.apk
+*.aab
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
