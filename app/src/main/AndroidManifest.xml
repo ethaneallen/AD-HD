@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Voice quick-capture: SpeechRecognizer needs mic access (runtime-requested on first use). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Time-block reminders fire to the minute. USE_EXACT_ALARM (API 33+) grants exact alarms
+      without the special-access screen; SCHEDULE_EXACT_ALARM covers API 31-32. If neither is
+      granted (some OEMs revoke it), ReminderScheduler falls back to an inexact window alarm.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Re-arm time-block alarms + recurring nudge workers after a device reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      Live countdown in the shade while a Focus block runs. Typed as a "specialUse" foreground
+      service: it is a user-initiated stopwatch readout, which matches none of the concrete
+      Android 14 types (no media, location, sync or data transfer involved).
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!--
+      Package visibility (Android 11+/API 30+): without this, getLaunchIntentForPackage() returns
+      null for these apps even when installed, so "Summon Bard's Song" could never detect/launch
+      them and would always fall through to the generic music chooser. Declares only the two music
+      apps we intentionally target — no broad QUERY_ALL_PACKAGES.
+    -->
+    <queries>
+        <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.spotify.music" />
+        <!-- Resolve the on-device voice recognition service for quick-capture. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ADDHD">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.ADDHD">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Live focus-block countdown (see FocusTimerService). -->
+        <service
+            android:name=".util.notify.FocusTimerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Live countdown for a user-started focus timer" />
+        </service>
+
+        <!-- Fires time-block reminders: the runway heads-up and the on-the-minute start. -->
+        <receiver
+            android:name=".util.notify.TimeBlockReceiver"
+            android:exported="false" />
+
+        <!-- Handles the Snooze / Complete buttons on a time-block notification. -->
+        <receiver
+            android:name=".util.notify.NotificationActionReceiver"
+            android:exported="false" />
+
+        <!-- Announces a finished focus block even if Doze froze the app mid-session. -->
+        <receiver
+            android:name=".util.notify.FocusEndReceiver"
+            android:exported="false" />
+
+        <!-- Re-arms all alarms + recurring workers after reboot. -->
+        <receiver
+            android:name=".util.notify.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Home-screen Quest Board (Glance). Rule-of-Three quests + one-tap check-off via the
+             shared RewardEngine, streak/gold header, and a Quick-Capture deep link. -->
+        <receiver
+            android:name=".widget.QuestWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quest_widget_info" />
+        </receiver>
+    </application>
+</manifest>

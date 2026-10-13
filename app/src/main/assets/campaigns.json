@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "campaigns": [
+    {
+      "campaignKey": "keep_on_borderlands",
+      "name": "Keep on the Borderlands",
+      "icon": "🏰",
+      "description": "★ Recommended Start! A classic beginner adventure! Defend the Keep on the Borderlands and explore the infamous Caves of Chaos. Perfect for new adventurers learning the ways of dungeon delving.",
+      "setting": "The Borderlands",
+      "level": "1-3",
+      "milestones": [
+        {
+          "order": 0,
+          "title": "Prologue: Arrival at the Keep",
+          "objective": "Arrive at the Keep and find lodging",
+          "description": "You are a fledgling adventurer seeking fame and fortune. The Keep on the Borderlands offers shelter and opportunity for those brave enough to face the wilderness beyond."
+        },
+        {
+          "order": 1,
+          "title": "Chapter 1: The Keep",
+          "objective": "Explore the Keep and gather information",
+          "description": "The Keep is a bastion of civilization on the edge of the wild. Meet the inhabitants, gather supplies, and learn of the dangers lurking in the Caves of Chaos."
+        },
+        {
+          "order": 2,
+          "title": "Chapter 2: The Wilderness",
+          "objective": "Navigate the wilderness and find the Caves",
+          "description": "Between the Keep and the Caves of Chaos lies dangerous wilderness. Bandits, wild beasts, and worse prey on the unwary."
+        },
+        {
+          "order": 3,
+          "title": "Chapter 3: Caves of Chaos - Outer Caves",
+          "objective": "Clear the outer caves of monsters",
+          "description": "The Caves of Chaos are a ravine filled with monster lairs. Goblins, orcs, and kobolds vie for territory in the outer caves."
+        },
+        {
+          "order": 4,
+          "title": "Chapter 4: Caves of Chaos - Inner Caves",
+          "objective": "Venture deeper into the caves",
+          "description": "Deeper in the ravine, more dangerous creatures lurk. Hobgoblins, gnolls, and bugbears have made their homes here."
+        },
+        {
+          "order": 5,
+          "title": "Chapter 5: The Temple of Evil Chaos",
+          "objective": "Destroy the Temple of Evil Chaos",
+          "description": "At the heart of the ravine lies a hidden temple where evil priests conduct dark rituals. They are the true masterminds behind the monster alliance!"
+        },
+        {
+          "order": 6,
+          "title": "Epilogue: Heroes of the Borderlands",
+          "objective": "Return to the Keep as heroes",
+          "description": "With the Temple destroyed and the Caves cleared, peace returns to the Borderlands. You are celebrated as heroes!"
+        }
+      ]
+    },
+    {
+      "campaignKey": "nights_dark_terror",
+      "name": "Night's Dark Terror",
+      "icon": "🌙",
+      "description": "A classic adventure in the Grand Duchy of Karameikos. Escort a horse trader home, only to find his family's homestead under siege by goblin wolf-riders!",
+      "setting": "Karameikos",
+      "level": "2-4",
+      "milestones": [
+        {
+          "order": 0,
+          "title": "Prologue: Journey to Sukiskyn",
+          "objective": "Travel to Sukiskyn homestead",
+          "description": "You have been hired by Stephan, a horse trader, to escort him to his family's homestead at Sukiskyn in the wilderness of Karameikos."
+        },
+        {
+          "order": 1,
+          "title": "Chapter 1: Siege of Sukiskyn",
+          "objective": "Defend Sukiskyn from the goblin attack",
+          "description": "Goblin wolf-riders have laid siege to the Sukiskyn homestead! The Sukiskyn family desperately needs your help to defend their home."
+        },
+        {
+          "order": 2,
+          "title": "Chapter 2: The Kidnapping",
+          "objective": "Track the goblins and rescue the prisoners",
+          "description": "During the attack, Stephan's brother has been kidnapped by the goblins! Tracks lead into the Dymrak Forest."
+        },
+        {
+          "order": 3,
+          "title": "Chapter 3: Xitaqa's Lair",
+          "objective": "Infiltrate Xitaqa's lair and defeat him",
+          "description": "The trail leads to ancient ruins where a goblin king named Xitaqa has established his lair."
+        },
+        {
+          "order": 4,
+          "title": "Chapter 4: The Iron Ring",
+          "objective": "Investigate the Iron Ring's operations",
+          "description": "You discover the goblins were working with the Iron Ring - a sinister slaving organization operating in Karameikos."
+        },
+        {
+          "order": 5,
+          "title": "Chapter 5: The Lost Valley",
+          "objective": "Find the Lost Valley and stop the Iron Ring",
+          "description": "Clues point to a hidden valley where the Iron Ring has a secret base and ancient Hutaakan ruins hold dark secrets."
+        },
+        {
+          "order": 6,
+          "title": "Epilogue: Heroes of Karameikos",
+          "objective": "Celebrate your victory!",
+          "description": "With the Iron Ring defeated and the valley's secrets revealed, you have become legendary heroes of the Grand Duchy."
+        }
+      ]
+    },
+    {
+      "campaignKey": "curse_of_strahd",
+      "name": "Curse of Strahd",
+      "icon": "🧛",
+      "description": "A gothic horror adventure in the mist-shrouded land of Barovia. Face the vampire lord Strahd von Zarovich and uncover the dark secrets of Castle Ravenloft!",
+      "setting": "Barovia",
+      "level": "1-10",
+      "milestones": [
+        {
+          "order": 0,
+          "title": "Prologue: Into the Mists",
+          "objective": "Find shelter and learn where you are",
+          "description": "Mysterious mists surround you and your companions. When they clear, you find yourselves in a dark, unfamiliar land."
+        },
+        {
+          "order": 1,
+          "title": "Chapter 1: Village of Barovia",
+          "objective": "Help Ismark protect his sister Ireena",
+          "description": "The village of Barovia is a place of fear and despair. The locals speak in hushed tones of the Devil Strahd who rules this land."
+        },
+        {
+          "order": 2,
+          "title": "Chapter 2: The Fortune Teller",
+          "objective": "Visit Madam Eva at Tser Pool",
+          "description": "Madam Eva, a Vistani seer, has offered to read your fortune. The cards will reveal the path to defeating Strahd."
+        },
+        {
+          "order": 3,
+          "title": "Chapter 3: The Town of Vallaki",
+          "objective": "Investigate the troubles in Vallaki",
+          "description": "Vallaki is a larger town trying to resist Strahd's influence. But dark forces work within its walls."
+        },
+        {
+          "order": 4,
+          "title": "Chapter 4: The Wizard's Tower",
+          "objective": "Find allies to stand against Strahd",
+          "description": "The mad wizard's tower holds secrets and powerful allies. But the wizard himself may be beyond saving."
+        },
+        {
+          "order": 5,
+          "title": "Chapter 5: The Amber Temple",
+          "objective": "Uncover the source of Strahd's power",
+          "description": "Ancient evil lurks in the Amber Temple, where dark vestiges offer forbidden power."
+        },
+        {
+          "order": 6,
+          "title": "Chapter 6: Castle Ravenloft",
+          "objective": "Defeat Strahd von Zarovich",
+          "description": "The time has come to confront Strahd in his castle. The fate of Barovia hangs in the balance."
+        },
+        {
+          "order": 7,
+          "title": "Epilogue: Dawn Over Barovia",
+          "objective": "Celebrate freedom!",
+          "description": "With Strahd defeated, the mists begin to lift. Barovia is finally free from darkness."
+        }
+      ]
+    },
+    {
+      "campaignKey": "tomb_of_annihilation",
+      "name": "Tomb of Annihilation",
+      "icon": "💀",
+      "description": "A deadly expedition into the jungles of Chult to end the Death Curse. Dinosaurs, undead, and an ancient tomb of horrors await!",
+      "setting": "Chult",
+      "level": "1-11",
+      "milestones": [
+        {
+          "order": 0,
+          "title": "Prologue: The Death Curse",
+          "objective": "Travel to Port Nyanzaru and find a guide",
+          "description": "A mysterious curse is killing those who have been raised from the dead. The source lies somewhere in the jungle peninsula of Chult."
+        },
+        {
+          "order": 1,
+          "title": "Chapter 1: Port Nyanzaru",
+          "objective": "Gather supplies and information about the Soulmonger",
+          "description": "The vibrant trading port of Chult teems with merchants, dinosaur races, and rumors of treasure in the jungle."
+        },
+        {
+          "order": 2,
+          "title": "Chapter 2: The Jungle",
+          "objective": "Navigate the jungle and find clues to the Soulmonger's location",
+          "description": "The steaming jungles of Chult are filled with ancient ruins, deadly predators, and undead horrors."
+        },
+        {
+          "order": 3,
+          "title": "Chapter 3: Omu, The Forbidden City",
+          "objective": "Collect the puzzle cubes from the Nine Shrines",
+          "description": "The lost city of Omu lies in ruin, overrun by yuan-ti and the mysterious shrines of the Trickster Gods."
+        },
+        {
+          "order": 4,
+          "title": "Chapter 4: The Fane of the Night Serpent",
+          "objective": "Infiltrate the yuan-ti temple and find the entrance to the tomb",
+          "description": "Deep beneath Omu lies the yuan-ti temple. Their leader serves an even darker master."
+        },
+        {
+          "order": 5,
+          "title": "Chapter 5: The Tomb of the Nine Gods",
+          "objective": "Descend into the tomb and destroy the Soulmonger",
+          "description": "The legendary Tomb of Annihilation awaits. Acererak's deadliest traps and the Soulmonger lie within."
+        },
+        {
+          "order": 6,
+          "title": "Epilogue: Curse Lifted",
+          "objective": "Celebrate your victory!",
+          "description": "With the Soulmonger destroyed, the Death Curse ends. Chult begins to heal, and the souls trapped within are freed."
+        }
+      ]
+    },
+    {
+      "campaignKey": "lost_mine_of_phandelver",
+      "name": "Lost Mine of Phandelver",
+      "icon": "⛏️",
+      "description": "The classic D&D 5th Edition starter adventure! Escort supplies to the frontier town of Phandalin, but danger lurks on the Triboar Trail. Goblins, bandits, and a mysterious villain seek the legendary Wave Echo Cave!",
+      "setting": "Sword Coast",
+      "level": "1-5",
+      "milestones": [
+        {
+          "order": 0,
+          "title": "Prologue: The Triboar Trail",
+          "objective": "Escort the wagon safely to Phandalin",
+          "description": "You've been hired by Gundren Rockseeker to escort a wagon of supplies to the frontier town of Phandalin. Gundren and his bodyguard Sildar have ridden ahead, promising to meet you in town."
+        },
+        {
+          "order": 1,
+          "title": "Chapter 1: Goblin Trouble",
+          "objective": "Rescue Sildar and discover what happened to Gundren",
+          "description": "The road is blocked by dead horses - an ambush! Gundren and Sildar are missing, and goblin tracks lead into the forest. The Cragmaw tribe is behind this."
+        },
+        {
+          "order": 2,
+          "title": "Chapter 2: Phandalin",
+          "objective": "Deal with the Redbrand menace",
+          "description": "The small frontier town is being terrorized by the Redbrands - thugs who work for someone called Glasstaff. The townsfolk desperately need heroes."
+        },
+        {
+          "order": 3,
+          "title": "Chapter 3: Secrets of Tresendar Manor",
+          "objective": "Infiltrate the Redbrand hideout and confront Glasstaff",
+          "description": "The Redbrand hideout lies beneath the old Tresendar Manor. Their leader Glasstaff knows something about Gundren's disappearance and the mysterious Black Spider."
+        },
+        {
+          "order": 4,
+          "title": "Chapter 4: Cragmaw Castle",
+          "objective": "Storm Cragmaw Castle and rescue Gundren",
+          "description": "The goblin stronghold of Cragmaw Castle is where King Grol holds Gundren prisoner. The Black Spider wants information about Wave Echo Cave."
+        },
+        {
+          "order": 5,
+          "title": "Chapter 5: Wave Echo Cave",
+          "objective": "Explore Wave Echo Cave and stop the Black Spider",
+          "description": "The legendary lost mine has been found! Within lies the Forge of Spells, a magical forge from the ancient Phandelver's Pact. But the Black Spider has already entered the cave..."
+        },
+        {
+          "order": 6,
+          "title": "Epilogue: Heroes of Phandalin",
+          "objective": "Celebrate your victory!",
+          "description": "With the Black Spider defeated and Wave Echo Cave secured, Phandalin can finally prosper. You are celebrated as the heroes who saved the town!"
+        }
+      ]
+    }
+  ]
+}

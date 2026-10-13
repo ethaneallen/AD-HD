@@ -1,0 +1,74 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- AD&HD launcher: a bold, physical-looking d20 carved from polished teal stone, with a
+         large cream "20" on the forward face. Facets are individually shaded (light top-left ->
+         dark bottom-right) to read as a beveled 3D object; cream edges give a carved outline.
+         Geometry centered in the ~22..86 safe zone so masks never clip it. -->
+
+    <!-- Soft teal glow disc behind the die for premium depth on the dark-brown background. -->
+    <path
+        android:fillColor="#00BFA5"
+        android:fillAlpha="0.14"
+        android:pathData="M54,54 m-40,0 a40,40 0 1,0 80,0 a40,40 0 1,0 -80,0 z" />
+
+    <!-- ===== Die body: pointy-top hexagon silhouette, split into beveled facets ===== -->
+    <!-- Hex corners: top(54,20) upper-r(83,37) lower-r(83,71) bottom(54,88) lower-l(25,71) upper-l(25,37)
+         Inner forward-face triangle: TL(41,49) TR(67,49) B(54,72). -->
+
+    <!-- Top-left facet — brightest (light source upper-left). -->
+    <path android:fillColor="#5FE6D2"
+        android:pathData="M54,20 L25,37 L41,49 L54,42 Z" />
+    <!-- Top-right facet. -->
+    <path android:fillColor="#33D2BC"
+        android:pathData="M54,20 L83,37 L67,49 L54,42 Z" />
+    <!-- Upper-left side facet. -->
+    <path android:fillColor="#16B7A2"
+        android:pathData="M25,37 L25,71 L41,49 Z" />
+    <!-- Upper-right side facet — darker. -->
+    <path android:fillColor="#0E9C8A"
+        android:pathData="M83,37 L83,71 L67,49 Z" />
+    <!-- Bottom-left facet. -->
+    <path android:fillColor="#0E9C8A"
+        android:pathData="M25,71 L54,88 L54,72 L41,49 Z" />
+    <!-- Bottom-right facet — darkest (shadow side). -->
+    <path android:fillColor="#087567"
+        android:pathData="M83,71 L54,88 L54,72 L67,49 Z" />
+    <!-- Small top bridge between the top facets and the forward face top edge. -->
+    <path android:fillColor="#45DCC8"
+        android:pathData="M54,42 L41,49 L67,49 Z" />
+
+    <!-- Forward face — the polished flat that holds the number. Bright, even teal. -->
+    <path android:fillColor="#3AD9C4"
+        android:pathData="M41,49 L67,49 L54,72 Z" />
+
+    <!-- ===== Cream carved edges ===== -->
+    <group>
+        <!-- Outer silhouette. -->
+        <path android:strokeColor="#F7EBD2" android:strokeWidth="3"
+            android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000"
+            android:pathData="M54,20 L83,37 L83,71 L54,88 L25,71 L25,37 Z" />
+        <!-- Forward-face triangle (thicker — the hero face). -->
+        <path android:strokeColor="#F7EBD2" android:strokeWidth="3"
+            android:strokeLineJoin="round" android:fillColor="#00000000"
+            android:pathData="M41,49 L67,49 L54,72 Z" />
+        <!-- Edges from face corners out to the hex vertices (the bevel seams). -->
+        <path android:strokeColor="#F7EBD2" android:strokeAlpha="0.9" android:strokeWidth="2"
+            android:strokeLineCap="round" android:fillColor="#00000000"
+            android:pathData="M54,42 L54,20 M41,49 L25,37 M67,49 L83,37 M41,49 L25,71 M67,49 L83,71 M54,72 L54,88" />
+        <!-- Short seam from face-top to the top vertex region. -->
+        <path android:strokeColor="#F7EBD2" android:strokeAlpha="0.7" android:strokeWidth="1.6"
+            android:strokeLineCap="round" android:fillColor="#00000000"
+            android:pathData="M41,49 L54,42 L67,49" />
+    </group>
+
+    <!-- ===== Carved rune gem on the forward face (no number — reads cleaner at icon scale) ===== -->
+    <!-- A small inset diamond in the center of the forward triangle, with a soft cream glow,
+         like a socketed critical-success gem. Center ~ (54,58). -->
+    <path android:fillColor="#F7EBD2" android:fillAlpha="0.25"
+        android:pathData="M54,52 L60,58 L54,64 L48,58 Z" />
+    <path android:fillColor="#FBF1DB"
+        android:pathData="M54,53.4 L58.6,58 L54,62.6 L49.4,58 Z" />
+</vector>
