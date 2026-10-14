@@ -123,6 +123,35 @@ data class PetEntity(
      * oldest surviving row on upgrade, and stamped on first launch for a new save.
      */
     val firstOpenEpochDay: Long = 0,
+    /**
+     * Momentum — the hero's XP multiplier, and the one number in the app with real stakes.
+     *
+     * Earned (+1 per day you do something, capped) and LOST (−2 per idle day, floored at 0). It
+     * replaced a multiplier derived from the clean-streak date, which grew purely by the calendar
+     * advancing: it couldn't be earned, couldn't be lost, and stopped changing after day 15 while
+     * the badge kept counting. This one moves both ways and you can watch it fall.
+     */
+    val momentum: Int = 0,
+    /** The last day momentum was credited — decay is measured from here. */
+    val momentumDay: Long = 0,
+    /**
+     * Rooms cleared, as a real counter: ONE PER COMPLETED QUEST.
+     *
+     * Previously derived as `lifetimeXP / 20`, which meant "Room 7/10" and the XP bar were the
+     * same quantity drawn twice — progress that looked earned but was just the XP bar relabelled.
+     * Now a room is a thing you did.
+     */
+    val roomsCleared: Int = 0,
+    /**
+     * Remaining HP of the boss standing in room 10, and the quest it belongs to.
+     *
+     * The boss used to die to a single task completion: `isBossRoom` was checked, loot dropped,
+     * done. Meanwhile STR fed `bossDamage` and WIS fed a crit chance that were computed, printed
+     * in a sentence, and applied to nothing — there was no HP for the damage to reduce. These two
+     * columns are what make the stat block real.
+     */
+    val bossHpRemaining: Int = 0,
+    val bossQuestIndex: Int = -1,
     // Permanent lifetime high score. Only ever increments — bumped when archived tasks are
     // purged so the tally survives the 30-day deletion. The task text is trashed; this isn't.
     val totalQuestsCompleted: Int = 0,
@@ -193,6 +222,31 @@ data class StrongholdEntity(
     // ---- Phase 2 (v13): Coin Vault — passive gold engine ----
     val vaultLevel: Int = 0,                  // 0 = locked, 1 = base, 2 = upgraded
     val vaultLastClaimMillis: Long = 0,       // last stipend claim; claim clock counts from here (mirrors garden)
+    // ---- Phase 3 (v20): drains that can never run out ----
+    /**
+     * SUPERSEDED (v20 -> v21). These backed "a night at the inn", which paid 600 gold to restore 2
+     * Momentum — i.e. +2% XP. The arithmetic never worked: the gold cost ~1,200 raw XP of work to
+     * earn, while two active days restored the same 2 points for free, so nothing would ever have
+     * been bought and nothing drained. Replaced by the bard's commission below, which sells a
+     * bonus you feel on the next completion instead of insurance against a trivial loss.
+     *
+     * Kept rather than dropped because removing a SQLite column means recreating the table, and
+     * minSdk 26 predates ALTER TABLE DROP COLUMN. They are written by nothing.
+     */
+    val innNightsUsed: Int = 0,
+    val innPeriodStartMillis: Long = 0,
+    /** Daily cap bookkeeping for the gambling table (mirrors the fidget XP cap pattern). */
+    val diceBetsDay: Long = 0,
+    val diceBetsCount: Int = 0,
+    // ---- Phase 3 (v21): the bard's commission ----
+    /**
+     * Commissions bought this period and when the period began — the escalating price makes this a
+     * sink that can't be farmed, and (unlike the inn) can't be completed either.
+     */
+    val bardCommissionsUsed: Int = 0,
+    val bardPeriodStartMillis: Long = 0,
+    /** While now() is below this, every XP award is multiplied. 0 = no bard playing. */
+    val bardExpiresAtMillis: Long = 0,
 )
 
 /**

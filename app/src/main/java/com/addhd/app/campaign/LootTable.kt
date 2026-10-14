@@ -67,14 +67,22 @@ object LootTable {
         LootDef("depths_blade_dragon", "Dragonfang Greatsword", "⚔️", "Weapon", LootStat.STR, 5, "Made for boss fights."),
         LootDef("depths_plate_deep", "Deepplate Armor", "🥼", "Chest", LootStat.CON, 5, "Nothing down here scares you now."),
         LootDef("depths_ring_shadow", "Shadowstep Ring", "💠", "Ring", LootStat.DEX, 5, "You move before doubt does."),
-    ).associateBy { it.id }
+        // Plus the author's own D&D arsenal: 51 named campaign pieces ([CampaignGear]) and the
+        // 55-piece base kit including the +1/+2/+3 magic weapons ([GenericGear]).
+    ).plus(CampaignGear.items).plus(GenericGear.items).associateBy { it.id }
 
     // ---- Per-dungeon drop pools (index matches Campaign quest order) ----
+    // Each tier carries its original hand-written four PLUS that setting's campaign gear, so the
+    // candidate set is wide enough that a drop is a surprise rather than a trip round the same
+    // sixteen pieces.
     private val dungeons: List<DungeonLoot> = listOf(
-        DungeonLoot("Cleanse the Caves", listOf("cave_boots_promptness", "cave_blade_focus", "cave_ring_resolve", "cave_charm_grit")),
-        DungeonLoot("Reclaim the Ruins", listOf("ruin_amulet_grit", "ruin_gauntlets_power", "ruin_helm_clarity", "ruin_tome_focus")),
-        DungeonLoot("Storm the Spire", listOf("spire_cloak_calm", "spire_shield_steadfast", "spire_axe_momentum", "spire_boots_swift")),
-        DungeonLoot("Descend the Depths", listOf("depths_charm_luck", "depths_blade_dragon", "depths_plate_deep", "depths_ring_shadow")),
+        DungeonLoot("The Borderlands", listOf("cave_boots_promptness", "cave_blade_focus", "cave_ring_resolve", "cave_charm_grit") + CampaignGear.pools[0]),
+        DungeonLoot("The Sword Coast", listOf("ruin_amulet_grit", "ruin_gauntlets_power", "ruin_helm_clarity", "ruin_tome_focus") + CampaignGear.pools[1]),
+        DungeonLoot("Karameikos", listOf("spire_cloak_calm", "spire_shield_steadfast", "spire_axe_momentum", "spire_boots_swift") + CampaignGear.pools[2]),
+        DungeonLoot("Barovia", listOf("depths_charm_luck", "depths_blade_dragon", "depths_plate_deep", "depths_ring_shadow") + CampaignGear.pools[3]),
+        // Fifth tier: [Campaign.lootTierFor] now yields 0..4, so without this the final five
+        // quests clamped back onto Barovia's pool.
+        DungeonLoot("Chult", CampaignGear.pools[4]),
     )
 
     /** Rarity for a piece, derived from its stat [LootDef.bonus] (bonus IS the tier). */
@@ -110,10 +118,27 @@ object LootTable {
     fun rollDrop(dungeonIndex: Int, seed: Int, ownedDefIds: Set<String> = emptySet()): LootDef {
         val idx = dungeonIndex.coerceIn(0, dungeons.lastIndex)
         // Current dungeon + all lower-tier dungeons, so the weighted roll spans commons → epics.
-        val pool = (0..idx).flatMap { dungeons[it].itemIds }.mapNotNull { allItems[it] }
-        // Prefer unowned candidates; fall back to the full pool only when everything is owned.
+        // Themed campaign gear is CUMULATIVE (this setting plus every earlier one), which is what
+        // lets the rarity weights bite across tiers.
+        //
+        // The mundane 5e kit is deliberately NOT cumulative — only the current tier's band joins
+        // the draw. Merging its 27 low-tier commons into every tier pushed commons from 46% to 68%
+        // of all draws and broke `dropsAreNotAllCommons`: a late-game hero would have been wading
+        // through daggers and padded armour. Scoped this way, mundane kit is what you turn up
+        // locally, while the named campaign pieces still travel with you. Nothing becomes
+        // unobtainable, because the 25 quests cycle back through every tier.
+        val pool = ((0..idx).flatMap { dungeons[it].itemIds } + GenericGear.pools[idx.coerceIn(0, GenericGear.pools.lastIndex)])
+            .mapNotNull { allItems[it] }
+        // Prefer unowned candidates.
         val unowned = pool.filter { it.id !in ownedDefIds }
-        val candidates = unowned.ifEmpty { pool }
+        val candidates = unowned.ifEmpty {
+            // Everything is owned, so this drop can only be a duplicate — make it a duplicate
+            // worth having. Falling back to the WHOLE pool meant 60% of every later drop was one
+            // of the four lowest-tier commons, because commons hold 60 of every 100 tickets.
+            // Restricting to the current tier at least hands back something with sell value.
+            (dungeons[idx].itemIds + GenericGear.pools[idx.coerceIn(0, GenericGear.pools.lastIndex)])
+                .mapNotNull { allItems[it] }.ifEmpty { pool }
+        }
         return weightedPick(candidates, seed)
     }
 
@@ -124,12 +149,29 @@ object LootTable {
      */
     private fun weightedPick(candidates: List<LootDef>, seed: Int): LootDef {
         val total = candidates.sumOf { rarityOf(it).weight }
-        var roll = ((seed % total) + total) % total
+        var roll = ((mix(seed) % total) + total) % total
         for (def in candidates) {
             roll -= rarityOf(def).weight
             if (roll < 0) return def
         }
         return candidates.last()   // unreachable; guards against rounding
+    }
+
+    /**
+     * Bit-mixing finalizer (MurmurHash3's), applied to the seed before it indexes ticket space.
+     *
+     * The seed is the hero's lifetime XP, which climbs ~26-39 per win — a slow WALK, not a sample.
+     * Taken modulo directly, consecutive drops landed inside the same 60-ticket common block and
+     * handed out the identical item several times in a row, then marched through the commons in
+     * order. Mixing decorrelates neighbouring seeds while staying fully deterministic, so the roll
+     * is still resume-safe.
+     */
+    private fun mix(seed: Int): Int {
+        var h = seed
+        h = h xor (h ushr 16); h *= 0x7feb352d.toInt()
+        h = h xor (h ushr 15); h *= -0x7b7d1b7b           // 0x846ca68b
+        h = h xor (h ushr 16)
+        return h
     }
 
     fun def(id: String): LootDef? = allItems[id]

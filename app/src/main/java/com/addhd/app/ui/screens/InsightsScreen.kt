@@ -1,5 +1,11 @@
 package com.addhd.app.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import com.addhd.app.ui.components.spoken
+import com.addhd.app.ui.components.describedAs
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +45,7 @@ fun InsightsScreen(
     data: AppViewModel.InsightsData,
     calibration: List<AppViewModel.Calibration> = emptyList(),
     allTime: AppViewModel.AllTime? = null,
+    consistency: AppViewModel.Consistency? = null,
 ) {
     Column(
         Modifier
@@ -82,6 +89,36 @@ fun InsightsScreen(
             }
         }
 
+        // --- Showing up ---
+        // A month of squares rather than a streak. Gaps are visible but not fatal: the headline
+        // number counts the days you turned up, so one missed day can't reduce the whole picture
+        // to zero the way a streak does.
+        if (consistency != null && consistency.days.isNotEmpty()) {
+            SectionCard {
+                Text("Showing up", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "${consistency.activeCount} of the last ${consistency.total} days",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(12.dp))
+                ConsistencyGrid(
+                    days = consistency.days,
+                    onColor = MaterialTheme.colorScheme.primary,
+                    offColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f),
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Any cleared quest, focus block, ritual or status log fills a square. " +
+                        "Gaps are part of it — the count is what you did, not what you broke.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         // --- All time ---
         // Every other panel here is a 7-day window, so the app could never show you more than one
         // week of yourself no matter how long you'd used it. These totals only grow, and they're
@@ -120,7 +157,7 @@ fun InsightsScreen(
         // --- Peak focus window ---
         if (data.peakWindow != null) {
             SectionCard {
-                Text("🕰️  Your peak focus window", style = MaterialTheme.typography.titleMedium)
+                Text("🕰️  Your peak focus window", modifier = Modifier.spoken("🕰️  Your peak focus window"), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     data.peakWindow,
@@ -141,7 +178,7 @@ fun InsightsScreen(
         // --- Strongest day ---
         if (data.strongestDay != null) {
             SectionCard {
-                Text("📅  Your power day", style = MaterialTheme.typography.titleMedium)
+                Text("📅  Your power day", modifier = Modifier.spoken("📅  Your power day"), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     data.strongestDay,
@@ -254,6 +291,34 @@ fun InsightsScreen(
                 baselineColor = MaterialTheme.colorScheme.outline,
                 labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * The month as a grid of squares, oldest first, 10 per row. Filled = a day with activity.
+ * Announced to a screen reader as a single summary rather than 30 separate unlabelled boxes.
+ */
+@Composable
+private fun ConsistencyGrid(days: List<Boolean>, onColor: Color, offColor: Color) {
+    val perRow = 10
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.describedAs(
+            "${days.count { it }} active days out of ${days.size}",
+        ),
+    ) {
+        days.chunked(perRow).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { active ->
+                    Box(
+                        Modifier
+                            .size(22.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (active) onColor else offColor),
+                    )
+                }
+            }
         }
     }
 }

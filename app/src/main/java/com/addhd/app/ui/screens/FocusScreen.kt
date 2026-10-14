@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.addhd.app.ui.components.spoken
 import com.addhd.app.ui.components.decorative
 import com.addhd.app.ui.components.describedAs
 import com.addhd.app.ui.theme.Radii
@@ -215,7 +216,7 @@ fun FocusScreen(
             // sprint: ride the momentum into another round, or stop here. The minutes are ALREADY
             // banked at this point, so this choice only decides what happens next — never whether
             // the work counted.
-            Text("🔥 Watch complete! The hearth roars.", style = MaterialTheme.typography.titleLarge)
+            Text("🔥 Watch complete! The hearth roars.", modifier = Modifier.spoken("🔥 Watch complete! The hearth roars."), style = MaterialTheme.typography.titleLarge)
             Text(
                 "$minutesChoice focus minutes banked.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -319,13 +320,21 @@ fun FocusScreen(
                 // Default to the quest actually being worked on, not just the easiest open one.
                 onClick = { breakdownFor = focusTarget ?: attributionCandidates.first() },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("🪓  Too big? Break it into steps") }
+            ) {
+                Text(
+                    "🪓  Too big? Break it into steps",
+                    modifier = Modifier.spoken("Too big? Break it into steps"),
+                )
+            }
         }
 
         // Available once a block is underway — a shame-free exit hatch.
         if (running || !timer.isFresh) {
             TextButton(onClick = { retreated = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("🛡️  Tactical Retreat — regroup, no penalty")
+                Text(
+                    "🛡️  Tactical Retreat — regroup, no penalty",
+                    modifier = Modifier.spoken("Tactical Retreat — regroup, no penalty"),
+                )
             }
         }
         }

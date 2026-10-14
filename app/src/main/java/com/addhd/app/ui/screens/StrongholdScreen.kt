@@ -31,6 +31,7 @@ import com.addhd.app.ui.components.decorative
 import com.addhd.app.ui.components.describedAs
 import com.addhd.app.ui.components.SectionCard
 import com.addhd.app.ui.theme.Radii
+import com.addhd.app.vm.AppViewModel
 import com.addhd.app.vm.AppViewModel.StrongholdUiState
 
 /**
@@ -53,6 +54,12 @@ fun StrongholdScreen(
     onUnlockVault: () -> Unit,
     onUpgradeVault: () -> Unit,
     onClaimStipend: () -> Unit,
+    // The endless drains: a repeatable timed XP buff and a house-edged dice table.
+    bardOffer: AppViewModel.BardOffer? = null,
+    onCommissionBard: () -> Unit = {},
+    diceTable: AppViewModel.DiceTableState? = null,
+    lastBet: AppViewModel.BetResult? = null,
+    onRollBet: (Int) -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -74,6 +81,130 @@ fun StrongholdScreen(
             GardenCard(state, onBuildGarden, onHarvest)
             TrophyRoomCard(state, onUnlockTrophyRoom, onPurchaseAscension, onPurchaseChronoAnchor)
             CoinVaultCard(state, onUnlockVault, onUpgradeVault, onClaimStipend)
+            // The two rooms that give gold somewhere to go forever, rather than one more
+            // thing to buy once and finish.
+            bardOffer?.let { BardCard(it, onCommissionBard) }
+            diceTable?.let { DiceTableCard(it, lastBet, onRollBet) }
+        }
+    }
+}
+
+/**
+ * The Bard — pay gold for a timed XP multiplier.
+ *
+ * The app's only gold sink that can't be completed. It replaced "a night at the inn", which sold
+ * 2 Momentum (+2% XP) for 600 gold: mechanically sound, but that gold cost roughly 1,200 raw XP of
+ * work to earn while two active days restored the same 2 points for free — a deal nobody would
+ * take, so it drained nothing. The lesson applied here is that a sink has to sell something worth
+ * buying, and this one is felt on the very next completion.
+ */
+@Composable
+private fun BardCard(offer: AppViewModel.BardOffer, onCommission: () -> Unit) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🎵", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.decorative())
+            Spacer(Modifier.width(12.dp))
+            Text("The Bard", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Put coin in the bard's hat and the whole tavern works harder — every XP award earns " +
+                "+${offer.bonusPct}% while the music lasts.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        StatusLine("Commission", "${offer.cost} Gold")
+        Spacer(Modifier.height(6.dp))
+        StatusLine(
+            "Bought this month",
+            if (offer.commissionsUsed == 0) "none yet" else "${offer.commissionsUsed} (price doubles each)",
+        )
+        Spacer(Modifier.height(6.dp))
+        StatusLine(
+            "Status",
+            if (offer.isPlaying) "Playing — ${humanDuration(offer.remainingMillis)} left" else "Silent",
+        )
+        Spacer(Modifier.height(14.dp))
+        PrimaryTavernButton(
+            if (offer.isPlaying) {
+                "Keep him playing — another 24h (${offer.cost} 🪙)"
+            } else {
+                "Commission the bard — +${offer.bonusPct}% XP for 24h (${offer.cost} 🪙)"
+            },
+            onClick = onCommission,
+            enabled = offer.canAfford,
+        )
+    }
+}
+
+/**
+ * The Gambling Table — a deliberately losing proposition (8% house edge), which is the point: it
+ * has to drain gold on average or it's just another faucet.
+ *
+ * Only gold is ever at stake — never XP, Momentum, streaks or items — and both the stake and the
+ * number of rolls per day are hard-capped, so a bad run can cost you coins and nothing else.
+ */
+@Composable
+private fun DiceTableCard(
+    table: AppViewModel.DiceTableState,
+    lastBet: AppViewModel.BetResult?,
+    onRoll: (Int) -> Unit,
+) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🎲", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.decorative())
+            Spacer(Modifier.width(12.dp))
+            Text("The Gambling Table", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Stake gold on one d20. 11–19 pays back half again, a natural 20 pays triple, " +
+                "anything lower and the house keeps it. The house wins over time — that's what " +
+                "makes it a tavern and not a treasury.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        StatusLine("Rolls left tonight", "${table.rollsLeftToday}")
+
+        lastBet?.let { b ->
+            Spacer(Modifier.height(12.dp))
+            Text(
+                when {
+                    b.jackpot -> "🎲 ${b.roll} — a natural twenty! +${b.netGold} gold"
+                    b.netGold > 0 -> "🎲 ${b.roll} — the table pays. +${b.netGold} gold"
+                    else -> "🎲 ${b.roll} — the house keeps it. ${b.netGold} gold"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (b.netGold > 0) MaterialTheme.colorScheme.primary
+                else com.addhd.app.ui.theme.GoldText.onCard,
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+        if (table.rollsLeftToday <= 0) {
+            Text(
+                "The table's closed for tonight. Come back tomorrow.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            // Fixed stakes rather than a free-entry field: no escalating "just one more, bigger"
+            // chase, and the maximum is always visible.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(50, 150, 500).forEach { stake ->
+                    OutlinedButton(
+                        onClick = { onRoll(stake) },
+                        enabled = table.maxStake >= stake,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = com.addhd.app.ui.components.cardOutlinedButtonColors(),
+                        border = com.addhd.app.ui.components.cardOutlinedBorder(),
+                    ) { Text("$stake 🪙", fontWeight = FontWeight.Bold, maxLines = 1) }
+                }
+            }
         }
     }
 }
@@ -311,9 +442,10 @@ private fun CoinVaultCard(
 /** A full-width primary Tavern action button (unlock/construct CTAs). Stays enabled when short —
  *  the VM no-ops and toasts the shortfall, matching the Rebuild-the-Tavern pattern. */
 @Composable
-private fun PrimaryTavernButton(label: String, onClick: () -> Unit) {
+private fun PrimaryTavernButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth().height(56.dp),
         shape = RoundedCornerShape(16.dp),
     ) { Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }

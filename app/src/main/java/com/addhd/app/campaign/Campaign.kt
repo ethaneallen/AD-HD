@@ -75,6 +75,22 @@ object WorldTier {
         Math.ceil(baseRequired * scalar(tier)).toInt().coerceAtLeast(baseRequired)
 
     /**
+     * A chapter's gate expressed in DUNGEON QUESTS rather than individual tasks.
+     *
+     * The two progressions are now nested: ten rooms plus a felled room-boss completes a dungeon
+     * quest, and that is what advances the chapter. Before this they ran in parallel — one
+     * completed task credited a room AND a chapter tick independently — which is why Home could
+     * show two unrelated bosses demanding attention at once.
+     *
+     * `tasksRequired` is authored in tasks (every chapter in campaigns.json says 5), so it is
+     * converted at [Campaign.TOTAL_ROOMS] tasks per dungeon quest and floored at one. Keeping the authored
+     * number as the gate would have made a chapter cost fifty rooms instead of ten, turning a
+     * 36-chapter campaign set into several thousand completed quests.
+     */
+    fun chapterGateInQuests(tasksRequired: Int): Int =
+        ((tasksRequired + Campaign.TOTAL_ROOMS - 1) / Campaign.TOTAL_ROOMS).coerceAtLeast(1)
+
+    /**
      * THE single source of truth for a chapter's boss gate. Applies World Tier scaling FIRST,
      * then subtracts the shop's GATE_REDUCTION artifact buff, and floors the result at 1 so a
      * gate can never drop to zero (which would auto-open the boss with no work). Every read site
@@ -100,28 +116,21 @@ object Campaign {
 
     const val TOTAL_ROOMS = 10
 
-    private val quests = listOf(
-        Quest("Cleanse the Caves", "the Goblin King"),
-        Quest("Reclaim the Ruins", "the Bone Warden"),
-        Quest("Storm the Spire", "the Frost Lich"),
-        Quest("Descend the Depths", "the Shadow Drake"),
-    )
-
-    /** Enemies encountered when completing tasks — flavor cycles by index. */
-    private val enemies = listOf(
-        "Goblin", "Skeleton", "Giant Rat", "Cave Bat", "Kobold",
-        "Zombie", "Orc Grunt", "Slime", "Bandit", "Wolf",
-    )
+    /**
+     * 25 quests drawn from the author's own D&D campaigns — see [Bestiary]. Each carries its own
+     * boss (with real, halved 5e HP) and its own enemy pool, replacing four quest names and ten
+     * enemy names that looped every 40 rooms.
+     */
+    private val quests: List<Bestiary.RoomQuest> get() = Bestiary.quests
 
     /**
-     * Total "rooms cleared" across the whole campaign = one room per win.
-     * We derive it from the hero's lifetime XP so it needs no new column: roughly one room
-     * per ~20 XP (a typical task). Non-destructive and monotonic.
+     * Rooms cleared, from the stored per-quest counter.
+     *
+     * This used to be `lifetimeXP / 20`, which made "Room 7/10" and the XP bar the same number in
+     * two different costumes. [com.addhd.app.data.PetEntity.roomsCleared] now counts completed
+     * quests, so a room is something you actually did.
      */
-    fun roomsClearedTotal(xp: Int, level: Int): Int {
-        val lifetimeXp = totalLifetimeXp(xp, level)
-        return lifetimeXp / 20
-    }
+    fun roomsClearedTotal(roomsCleared: Int): Int = roomsCleared.coerceAtLeast(0)
 
     /** Rebuild lifetime XP from current level + partial xp using the same thresholds (level*100). */
     fun totalLifetimeXp(xp: Int, level: Int): Int {
@@ -133,18 +142,32 @@ object Campaign {
     val questCount: Int get() = quests.size
 
     /** Which dungeon (0-based) the hero is currently in — also used to pick the loot pool. */
-    fun questIndex(xp: Int, level: Int): Int =
-        (roomsClearedTotal(xp, level) / TOTAL_ROOMS) % quests.size
+    fun questIndex(roomsCleared: Int): Int =
+        (roomsClearedTotal(roomsCleared) / TOTAL_ROOMS) % quests.size
 
-    fun currentQuest(xp: Int, level: Int): Quest = quests[questIndex(xp, level)]
+    fun currentQuest(roomsCleared: Int): Bestiary.RoomQuest = quests[questIndex(roomsCleared)]
 
     /** Room within the current quest, 1..TOTAL_ROOMS. */
-    fun roomInQuest(xp: Int, level: Int): Int {
-        val cleared = roomsClearedTotal(xp, level) % TOTAL_ROOMS
+    fun roomInQuest(roomsCleared: Int): Int {
+        val cleared = roomsClearedTotal(roomsCleared) % TOTAL_ROOMS
         return (cleared + 1).coerceAtMost(TOTAL_ROOMS)
     }
 
-    fun enemyFor(seed: Int): String = enemies[(seed % enemies.size + enemies.size) % enemies.size]
+    /**
+     * Which loot pool a quest draws from.
+     *
+     * [Bestiary] holds 25 quests laid out as five difficulty tiers of five settings, while
+     * [LootTable] has four pools. Passing the raw quest index would clamp every quest past the
+     * fourth to the same pool, freezing loot quality for 21 of the 25. Grouping by tier keeps gear
+     * escalating alongside the bestiary instead.
+     */
+    fun lootTierFor(questIndex: Int): Int = questIndex / 5
+
+    /** Rank-and-file drawn from the CURRENT quest's own pool, so the bestiary tracks the setting. */
+    fun enemyFor(seed: Int, roomsCleared: Int): String {
+        val pool = currentQuest(roomsCleared).enemies.ifEmpty { listOf("Goblin") }
+        return pool[(seed % pool.size + pool.size) % pool.size]
+    }
 
     /** Build the combat-log line shown when a task is completed. */
     fun combatLine(heroClass: HeroClass?, enemy: String, damage: Int, xp: Int): String {
@@ -191,15 +214,15 @@ object Campaign {
      * Dynamic hero-card flavor by class/level/room. `seed` (e.g. lifetime XP + hour) keeps a
      * given state stable but varies across states. Replaces the old wellness copy.
      */
-    fun flavorFor(className: String, xp: Int, level: Int, seed: Int): Flavor {
-        val room = roomInQuest(xp, level)
-        val quest = currentQuest(xp, level)
+    fun flavorFor(className: String, roomsCleared: Int, level: Int, seed: Int): Flavor {
+        val room = roomInQuest(roomsCleared)
+        val quest = currentQuest(roomsCleared)
         return when {
             room >= TOTAL_ROOMS -> {
                 val l = bossLines[(seed % bossLines.size + bossLines.size) % bossLines.size]
                 Flavor("⚔️ Warlord ahead", l.format(quest.boss))
             }
-            level <= 1 && roomsClearedTotal(xp, level) == 0 -> {
+            level <= 1 && roomsClearedTotal(roomsCleared) == 0 -> {
                 val l = lvl1Lines[(seed % lvl1Lines.size + lvl1Lines.size) % lvl1Lines.size]
                 Flavor("The campaign begins", l.format(className))
             }

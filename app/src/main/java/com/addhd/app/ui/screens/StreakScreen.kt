@@ -37,7 +37,11 @@ import com.addhd.app.ui.theme.Radii
 @Composable
 fun StreakScreen(
     cleanDays: Int,
-    multiplier: Float,
+    // Momentum is the number with stakes: it rises with use and falls on idle days. It replaced a
+    // `multiplier: Float` parameter derived from cleanDays, which grew with the calendar alone.
+    momentum: Int = 0,
+    momentumMax: Int = 15,
+    momentumAtRisk: Int = 0,
     elixirCount: Int = 0,     // Elixirs of Willpower owned — will auto-absorb the next reset
     streakFreezeCharges: Int = 0,   // Chrono-Anchor Streak-Freeze charges remaining
     hasChronoAnchor: Boolean = false,
@@ -88,10 +92,19 @@ fun StreakScreen(
         SectionCard {
             Text("Streak perk", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(6.dp))
-            val bonusPct = ((multiplier - 1f) * 100).toInt()
+            // Momentum points == bonus percent. Computing it from the float multiplier truncated
+            // to one less than the true value (15 -> "+14%").
+            val bonusPct = momentum
             Text(
-                "You're earning +$bonusPct% XP right now thanks to your streak. " +
-                    "It climbs +1% every clean day, capped at +15% — so protecting this number levels your hero faster.",
+                if (momentumAtRisk > 0) {
+                    "⚡ Momentum $momentum/$momentumMax — you're earning +$bonusPct% XP. " +
+                        "Do anything today and it climbs. Let a whole day pass and you lose " +
+                        "$momentumAtRisk of it."
+                } else {
+                    "⚡ Momentum $momentum/$momentumMax — no XP bonus right now. " +
+                        "Earn anything today and it starts climbing again: +1 per active day, " +
+                        "up to +$momentumMax% XP."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

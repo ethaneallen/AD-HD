@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         OwnedItemEntity::class,
         StrongholdEntity::class,
     ],
-    version = 18,
+    version = 22,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -307,6 +307,101 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v18 -> v19: Momentum. Two columns backing an XP multiplier that can be lost.
+         *
+         * Seeded so nobody is punished by the upgrade itself: existing saves start at the cap
+         * (15 = +15% XP, exactly what the old clean-streak multiplier was already paying at 87
+         * days) with today as the last active day. From here it's theirs to keep or lose.
+         */
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                if (!hasColumn(db, "pet", "momentum")) {
+                    db.execSQL("ALTER TABLE pet ADD COLUMN momentum INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("UPDATE pet SET momentum = 15")
+                }
+                if (!hasColumn(db, "pet", "momentumDay")) {
+                    db.execSQL("ALTER TABLE pet ADD COLUMN momentumDay INTEGER NOT NULL DEFAULT 0")
+                    // Today, in LOCAL epoch days, computed in Kotlin to match the app's day math
+                    // (SQLite's strftime is UTC and would be off by one near midnight).
+                    db.execSQL(
+                        "UPDATE pet SET momentumDay = ?",
+                        arrayOf<Any>(java.time.LocalDate.now().toEpochDay()),
+                    )
+                }
+            }
+        }
+
+        /**
+         * v19 -> v20: the gold economy gets drains that can't run out — a repeatable Momentum
+         * shield ("a night at the inn") and a gambling table. Four additive columns on the single
+         * stronghold row, all defaulting to "never used". Purely additive; no data risk.
+         */
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val cols = listOf(
+                    "innNightsUsed" to "INTEGER NOT NULL DEFAULT 0",
+                    "innPeriodStartMillis" to "INTEGER NOT NULL DEFAULT 0",
+                    "diceBetsDay" to "INTEGER NOT NULL DEFAULT 0",
+                    "diceBetsCount" to "INTEGER NOT NULL DEFAULT 0",
+                )
+                for ((name, decl) in cols) {
+                    if (!hasColumn(db, "stronghold", name)) {
+                        db.execSQL("ALTER TABLE stronghold ADD COLUMN $name $decl")
+                    }
+                }
+            }
+        }
+
+        /**
+         * v20 -> v21: the bard's commission replaces the inn.
+         *
+         * Three additive columns. The inn's two are deliberately left in place and unused — see
+         * [StrongholdEntity.innNightsUsed]; dropping a column would mean recreating the table on
+         * devices whose SQLite predates DROP COLUMN, which is a real risk for no benefit.
+         */
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val cols = listOf(
+                    "bardCommissionsUsed" to "INTEGER NOT NULL DEFAULT 0",
+                    "bardPeriodStartMillis" to "INTEGER NOT NULL DEFAULT 0",
+                    "bardExpiresAtMillis" to "INTEGER NOT NULL DEFAULT 0",
+                )
+                for ((name, decl) in cols) {
+                    if (!hasColumn(db, "stronghold", name)) {
+                        db.execSQL("ALTER TABLE stronghold ADD COLUMN $name $decl")
+                    }
+                }
+            }
+        }
+
+        /**
+         * v21 -> v22: rooms become a real counter, and room bosses get HP.
+         *
+         * `roomsCleared` is backfilled from the old derived formula (lifetimeXP / 20) so nobody
+         * is teleported backwards in the campaign on upgrade — the position you can see today is
+         * the position you keep. From here it advances one room per completed quest instead of
+         * tracking the XP bar.
+         */
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                if (!hasColumn(db, "pet", "roomsCleared")) {
+                    db.execSQL("ALTER TABLE pet ADD COLUMN roomsCleared INTEGER NOT NULL DEFAULT 0")
+                    // lifetimeXP = xp + sum(l*100) for l in 1 until level  ==  xp + 50*level*(level-1)
+                    db.execSQL(
+                        "UPDATE pet SET roomsCleared = (xp + 50 * level * (level - 1)) / 20"
+                    )
+                }
+                if (!hasColumn(db, "pet", "bossHpRemaining")) {
+                    db.execSQL("ALTER TABLE pet ADD COLUMN bossHpRemaining INTEGER NOT NULL DEFAULT 0")
+                }
+                if (!hasColumn(db, "pet", "bossQuestIndex")) {
+                    // -1 = no boss engaged yet; the first arrival at room 10 arms it.
+                    db.execSQL("ALTER TABLE pet ADD COLUMN bossQuestIndex INTEGER NOT NULL DEFAULT -1")
+                }
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 val today = java.time.LocalDate.now().toEpochDay()
@@ -319,6 +414,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_6_7, migration7to8(today), MIGRATION_8_9, MIGRATION_9_10,
                     MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
+                    MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22,
                 ).build().also { INSTANCE = it }
             }
     }

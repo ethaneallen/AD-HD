@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.addhd.app.ui.components.spoken
 import com.addhd.app.ui.components.decorative
 import com.addhd.app.ui.components.describedAs
 import com.addhd.app.data.JournalEntity

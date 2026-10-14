@@ -256,6 +256,9 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                     val quickStrike by vm.manaMatchedTasks.collectAsState()
                     val resumeTask by vm.resumeContext.collectAsState()
                     val resumeIsActive by vm.resumeIsActive.collectAsState()
+                    val momentum by vm.momentum.collectAsState()
+                    // Includes equipped-loot bonuses, matching what actually hits the boss.
+                    val combatStats by vm.combatStats.collectAsState()
                     val startOfDay = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
                     val today = LocalDate.now().toEpochDay()
                     val cleanDays = AppViewModel.cleanDays(pet?.cleanStreakStartEpochDay ?: 0L, today)
@@ -271,12 +274,13 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                     } else {
                         val xp = pet?.xp ?: 0
                         val level = pet?.level ?: 1
-                        val quest = Campaign.currentQuest(xp, level)
+                        val roomsCleared = pet?.roomsCleared ?: 0
+                        val quest = Campaign.currentQuest(roomsCleared)
                         // Gritty, class/room-aware flavor. Seed by lifetime XP so it stays
                         // stable within a state but shifts as the hero progresses.
                         val flavor = Campaign.flavorFor(
                             className = heroClass?.display ?: "Your hero",
-                            xp = xp, level = level,
+                            roomsCleared = roomsCleared, level = level,
                             seed = Campaign.totalLifetimeXp(xp, level),
                         )
                         HomeScreen(
@@ -288,8 +292,16 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                             heroClass = heroClass,
                             questName = quest.name,
                             questBoss = quest.boss,
-                            roomInQuest = Campaign.roomInQuest(xp, level),
+                            roomInQuest = Campaign.roomInQuest(roomsCleared),
                             totalRooms = Campaign.TOTAL_ROOMS,
+                            // The boss now has HP, so the room-10 card shows the fight's state.
+                            bossMaxHp = quest.bossMaxHp,
+                            bossHpRemaining = if (pet?.bossQuestIndex == Campaign.questIndex(roomsCleared)) {
+                                pet?.bossHpRemaining ?: 0
+                            } else {
+                                0   // not yet engaged — show it at full health
+                            },
+                            heroBossDamage = combatStats.bossDamage,
                             flavorHeadline = flavor.headline,
                             flavorLine = flavor.line,
                             activeQuest = activeQuest,
@@ -311,11 +323,13 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                             // attributed to it without asking) and quiets the card until tomorrow.
                             // No navigation — see the comment on the card in HomeScreen.
                             onStillOnIt = { t -> vm.acknowledgeStillWorkingOn(t) },
+                            momentum = momentum,
                         )
                     }
                 }
                 composable("streak") {
                     val pet by vm.pet.collectAsState()
+                    val streakMomentum by vm.momentum.collectAsState()
                     val owned by vm.ownedItems.collectAsState()
                     val stronghold by vm.strongholdUiState.collectAsState()
                     val today = LocalDate.now().toEpochDay()
@@ -323,7 +337,11 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                     val elixirCount = owned.firstOrNull { it.itemId == "elixir_willpower" }?.qty ?: 0
                     StreakScreen(
                         cleanDays = cleanDays,
-                        multiplier = AppViewModel.streakMultiplier(cleanDays),
+                        // The XP bonus now comes from Momentum, which is earned and losable —
+                        // the old multiplier grew purely from the clean-streak start date.
+                        momentum = streakMomentum.value,
+                        momentumMax = streakMomentum.max,
+                        momentumAtRisk = streakMomentum.atRisk,
                         elixirCount = elixirCount,
                         streakFreezeCharges = stronghold.chronoCharges,
                         hasChronoAnchor = stronghold.chronoAnchorPurchased,
@@ -392,7 +410,13 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                     val insights by vm.insights.collectAsState()
                     val calibration by vm.calibration.collectAsState()
                     val allTime by vm.allTime.collectAsState()
-                    InsightsScreen(data = insights, calibration = calibration, allTime = allTime)
+                    val consistency by vm.consistency.collectAsState()
+                    InsightsScreen(
+                        data = insights,
+                        calibration = calibration,
+                        allTime = allTime,
+                        consistency = consistency,
+                    )
                 }
                 composable(
                     "fidget?boss={boss}",
@@ -493,6 +517,11 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                 composable("stronghold") {
                     val state by vm.strongholdUiState.collectAsState()
                     val gold by vm.gold.collectAsState()
+                    val bardOffer by vm.bardOffer.collectAsState()
+                    val diceTable by vm.diceTable.collectAsState()
+                    // Hold the last roll so the result stays readable instead of flashing past.
+                    var lastBet by remember { mutableStateOf<AppViewModel.BetResult?>(null) }
+                    LaunchedEffect(Unit) { vm.betResults.collect { lastBet = it } }
                     com.addhd.app.ui.screens.StrongholdScreen(
                         state = state,
                         gold = gold,
@@ -505,6 +534,11 @@ fun AppNav(openQuickCaptureOnce: androidx.compose.runtime.MutableState<Boolean>?
                         onUnlockVault = { vm.unlockCoinVault() },
                         onUpgradeVault = { vm.upgradeCoinVault() },
                         onClaimStipend = { vm.claimStipend() },
+                        bardOffer = bardOffer,
+                        onCommissionBard = { vm.commissionBard() },
+                        diceTable = diceTable,
+                        lastBet = lastBet,
+                        onRollBet = { stake -> vm.rollDiceBet(stake) },
                     )
                 }
                 composable("shop") {

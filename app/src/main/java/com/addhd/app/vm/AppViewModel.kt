@@ -351,7 +351,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // at 1. Same function the write paths call, so the displayed gate can't drift from the
             // enforced one.
             val tr = current?.let {
-                com.addhd.app.campaign.WorldTier.effectiveGate(it.tasksRequired, tier, reduction)
+                // Gate is counted in DUNGEON QUESTS now — ten rooms plus a felled room-boss each.
+                com.addhd.app.campaign.WorldTier.effectiveGate(
+                    com.addhd.app.campaign.WorldTier.chapterGateInQuests(it.tasksRequired),
+                    tier, reduction,
+                )
             } ?: 0
             val ready = current != null && tr > 0 && td >= tr
             // Boss is truly killable only when the TYPED demand is also met. Same branches as the
@@ -1032,6 +1036,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         /** Completed tasks are kept in the Quest Archive this many days, then purged. */
         const val ARCHIVE_RETENTION_DAYS = 30
 
+        /** Window for the consistency grid. */
+        const val CONSISTENCY_DAYS = 30
+
         /** Accessibility: freeze the app's looping animations. */
         private const val KEY_REDUCE_MOTION = "reduce_motion"
 
@@ -1106,6 +1113,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         const val VAULT_CLAIM_INTERVAL_MILLIS = 24L * 60 * 60 * 1000  // stipend cadence
         const val VAULT_STIPEND_L1 = 15           // gold per claim at level 1
         const val VAULT_STIPEND_L2 = 30           // gold per claim at level 2
+
+        // ---- The bard's commission (repeatable, timed XP buff) ----
+        /** First commission of a period. Priced to be felt, not shrugged off. */
+        const val BARD_BASE_COST = 1000
+        /** Each further commission in the period doubles: 1k / 2k / 4k / 8k / 16k, then flat. */
+        const val BARD_MAX_DOUBLINGS = 4
+        const val BARD_DURATION_MILLIS = 24L * 60 * 60 * 1000
+        const val BARD_PERIOD_MILLIS = 30L * 24 * 60 * 60 * 1000   // ~1 month
+
+        /**
+         * Price of the next commission. Doubles per purchase in the period, then flat at the cap —
+         * the escalation is what stops this being farmable and what lets it drain a hoard in a
+         * handful of buys rather than dozens. Pure and in the companion so it's directly testable.
+         */
+        fun bardCostFor(commissionsUsed: Int): Int =
+            BARD_BASE_COST * (1 shl commissionsUsed.coerceIn(0, BARD_MAX_DOUBLINGS))
+
+        // ---- Gambling table ----
+        // Negative expected value on purpose, or it's a faucet rather than a drain:
+        //   p(lose)=0.50 x -1  +  p(11..19)=0.45 x +0.6  +  p(20)=0.05 x +3  =  -0.08 per gold staked
+        const val DICE_WIN_MULT = 0.6             // profit multiple on an 11-19
+        const val DICE_JACKPOT_MULT = 3.0         // profit multiple on a natural 20
+        /** Hard ceiling per roll, and rolls per day — the table can't become the whole evening. */
+        const val DICE_MAX_STAKE = 500
+        const val DICE_BETS_PER_DAY = 10
 
         // ---- The Sanctuary: Consult the Oracle ----
         /**
@@ -1301,7 +1333,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // World Tier scaling minus equipped GATE_REDUCTION, floored at 1 — the same
             // WorldTier.effectiveGate() the UI's activeQuest projection shows.
             val gate = com.addhd.app.campaign.WorldTier.effectiveGate(
-                current.tasksRequired, petDao.get()?.worldTier ?: 1, gateReductionNow(),
+                com.addhd.app.campaign.WorldTier.chapterGateInQuests(current.tasksRequired),
+                petDao.get()?.worldTier ?: 1,
+                gateReductionNow(),
             )
             if (current.tasksDone < gate) return@withCampaignLock false
 
@@ -1363,10 +1397,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // resume-safe and won't repeat the same piece back-to-back. Surfaced via the same
             // CombatEvent the room-10 drop uses, so the loot toast/overlay renders identically.
             val p = petDao.get() ?: PetEntity()
-            val dungeonIndex = com.addhd.app.campaign.Campaign.questIndex(p.xp, p.level)
+            val dungeonIndex = com.addhd.app.campaign.Campaign.questIndex(p.roomsCleared)
             val owned = lootDao.allNow().map { it.defId }.toSet()
             val seed = com.addhd.app.campaign.Campaign.totalLifetimeXp(p.xp, p.level) + lootDao.count()
-            val drop = com.addhd.app.campaign.LootTable.rollDrop(dungeonIndex, seed, owned)
+            val drop = com.addhd.app.campaign.LootTable.rollDrop(com.addhd.app.campaign.Campaign.lootTierFor(dungeonIndex), seed, owned)
             lootDao.insert(LootEntity(defId = drop.id, acquiredAtMillis = now()))
             com.addhd.app.util.Haptics.diceCrit(appContext)   // crisp escalating pops on a gear drop
             engine.emitCombat(
@@ -1437,7 +1471,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // floored at 1) so bossReady flips false and a single real task re-opens the fight.
             // Same WorldTier.effectiveGate() every other site uses.
             val gate = com.addhd.app.campaign.WorldTier.effectiveGate(
-                current.tasksRequired, petDao.get()?.worldTier ?: 1, gateReductionNow(),
+                com.addhd.app.campaign.WorldTier.chapterGateInQuests(current.tasksRequired),
+                petDao.get()?.worldTier ?: 1,
+                gateReductionNow(),
             )
             if (current.tasksDone >= gate) {
                 campaignDao.updateMilestone(current.copy(tasksDone = (gate - 1).coerceAtLeast(0)))
@@ -1821,9 +1857,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 _tavernMsg.tryEmit("No stipend ready yet — check back later")
                 return@withLock
             }
+            val p = petDao.get() ?: PetEntity()
+            // The vault pays for WORK, not for the calendar advancing.
+            //
+            // It used to accrue purely on elapsed time: 30 gold a day for existing, ~11,000 a year
+            // whether or not the app was ever opened. That's the same flaw the old clean-streak XP
+            // multiplier had, and it's what made gold worthless — an uncapped faucet against sinks
+            // that could be finished. The accrued days are NOT forfeited; they just wait until a
+            // day you actually earn something.
+            if (p.lastFedEpochDay != today()) {
+                _tavernMsg.tryEmit("The vault stays shut — earn something today and it pays out")
+                return@withLock
+            }
             val perPeriod = if (s.vaultLevel >= 2) VAULT_STIPEND_L2 else VAULT_STIPEND_L1
             val payout = perPeriod * periods
-            val p = petDao.get() ?: PetEntity()
             petDao.upsert(p.copy(gold = p.gold + payout))
             // Advance the anchor by the consumed whole intervals only (preserve the partial remainder),
             // so the next stipend stays on its original cadence rather than drifting from `now()`.
@@ -1833,6 +1880,162 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _tavernMsg.tryEmit(
                 if (periods == 1) "💰 Claimed $payout gold from the Vault"
                 else "💰 Claimed $payout gold ($periods days' stipend)"
+            )
+        }
+    }
+
+    // ================================================================================================
+    //  The bard's commission — the sink that can never be finished.
+    // ================================================================================================
+    // Every other gold sink in this app is completable: the shop's artifacts, the whole 21,000-gold
+    // Tavern build-out. Once bought, gold has nowhere to go and every coin reward stops meaning
+    // anything — which is exactly where this save ended up.
+    //
+    // This one is repeatable forever AND sells something felt immediately: +50% XP while the bard
+    // plays. That's the lesson from the version it replaced ("a night at the inn"), which sold
+    // insurance on a 2% loss — mechanically sound, but a deal no one would ever take, so it drained
+    // nothing. A sink has to be worth buying, not merely possible to buy.
+
+    /** Cost of the next commission, given how many have been bought this period. */
+    fun bardCost(commissionsUsed: Int): Int = bardCostFor(commissionsUsed)
+
+    data class BardOffer(
+        val cost: Int,
+        val commissionsUsed: Int,
+        val canAfford: Boolean,
+        /** Millis of bard time left; 0 when none is playing. */
+        val remainingMillis: Long,
+        val bonusPct: Int,
+    ) {
+        val isPlaying: Boolean get() = remainingMillis > 0L
+    }
+
+    val bardOffer: StateFlow<BardOffer> = combine(strongholdDao.observe(), pet, minuteTicker) { s, p, _ ->
+        val freshPeriod = !inCurrentBardPeriod(s?.bardPeriodStartMillis ?: 0L)
+        val used = if (freshPeriod) 0 else s?.bardCommissionsUsed ?: 0
+        val cost = bardCost(used)
+        BardOffer(
+            cost = cost,
+            commissionsUsed = used,
+            canAfford = (p?.gold ?: 0) >= cost,
+            remainingMillis = ((s?.bardExpiresAtMillis ?: 0L) - now()).coerceAtLeast(0L),
+            bonusPct = ((RewardEngine.BARD_XP_MULT - 1.0) * 100).toInt(),
+        )
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000),
+        BardOffer(BARD_BASE_COST, 0, false, 0L, 50),
+    )
+
+    private fun inCurrentBardPeriod(startMillis: Long): Boolean =
+        startMillis > 0L && now() - startMillis < BARD_PERIOD_MILLIS
+
+    /**
+     * Hire the bard for another [BARD_DURATION_MILLIS].
+     *
+     * Buying while one is already playing EXTENDS from the current expiry rather than from now, so
+     * nothing you've paid for is ever burned — and since the price doubles each time, stacking days
+     * drains a hoard quickly, which is the job.
+     */
+    fun commissionBard() = viewModelScope.launch(Dispatchers.IO) {
+        strongholdMutex.withLock {
+            val s = strongholdDao.get() ?: return@withLock
+            if (!s.unlocked) return@withLock
+            val freshPeriod = !inCurrentBardPeriod(s.bardPeriodStartMillis)
+            val used = if (freshPeriod) 0 else s.bardCommissionsUsed
+            val cost = bardCost(used)
+
+            val p = petDao.get() ?: return@withLock
+            if (p.gold < cost) {
+                _tavernMsg.tryEmit("The bard wants $cost gold — you're short")
+                return@withLock
+            }
+
+            petDao.upsert(p.copy(gold = p.gold - cost))
+            strongholdDao.upsert(
+                s.copy(
+                    bardCommissionsUsed = used + 1,
+                    bardPeriodStartMillis = if (freshPeriod) now() else s.bardPeriodStartMillis,
+                    // Extend from the later of now / current expiry so paid time is never lost.
+                    bardExpiresAtMillis = maxOf(now(), s.bardExpiresAtMillis) + BARD_DURATION_MILLIS,
+                )
+            )
+            com.addhd.app.util.Sound.play(appContext, com.addhd.app.util.Sfx.SFX_QUICK_WIN)
+            val pct = ((RewardEngine.BARD_XP_MULT - 1.0) * 100).toInt()
+            _tavernMsg.tryEmit("🎵 The bard strikes up — +$pct% XP for 24 hours (−$cost gold)")
+        }
+    }
+
+    // ================================================================================================
+    //  The gambling table — a VOLATILE sink.
+    // ================================================================================================
+    // Deliberately negative expected value (~8% house edge), which is the point: it has to drain
+    // gold on average or it's just another faucet wearing a disguise.
+    //
+    // Guard rails, because this app is for people whose impulse control is the whole problem and
+    // gambling-style loops are a known risk for them:
+    //   * ONLY gold is ever at stake. XP, level, Momentum, streaks and items can never be lost.
+    //   * Stakes are capped per roll and rolls are capped per day — no all-night chase.
+    //   * No double-or-nothing escalation, and nothing can be bought with real money anywhere in
+    //     the app, so there is no path from a bad run to a financial loss.
+
+    data class BetResult(
+        val roll: Int,
+        val staked: Int,
+        val netGold: Int,     // negative on a loss
+        val jackpot: Boolean,
+        val rollsLeftToday: Int,
+    )
+
+    private val _betResults = MutableSharedFlow<BetResult>(extraBufferCapacity = 4)
+    val betResults: SharedFlow<BetResult> = _betResults
+
+    data class DiceTableState(val rollsLeftToday: Int, val maxStake: Int)
+
+    val diceTable: StateFlow<DiceTableState> = combine(strongholdDao.observe(), pet) { s, p ->
+        val used = if (s?.diceBetsDay == today()) s.diceBetsCount else 0
+        DiceTableState(
+            rollsLeftToday = (DICE_BETS_PER_DAY - used).coerceAtLeast(0),
+            maxStake = minOf(DICE_MAX_STAKE, p?.gold ?: 0),
+        )
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000),
+        DiceTableState(DICE_BETS_PER_DAY, 0),
+    )
+
+    /**
+     * Stake [amount] gold on one d20. 11-19 pays [DICE_WIN_MULT]x the stake back as profit, a
+     * natural 20 pays [DICE_JACKPOT_MULT]x, anything else loses the stake.
+     */
+    fun rollDiceBet(amount: Int) = viewModelScope.launch(Dispatchers.IO) {
+        strongholdMutex.withLock {
+            val s = strongholdDao.get() ?: return@withLock
+            if (!s.unlocked) return@withLock
+            val t = today()
+            val used = if (s.diceBetsDay == t) s.diceBetsCount else 0
+            if (used >= DICE_BETS_PER_DAY) {
+                _tavernMsg.tryEmit("The table's closed for tonight — come back tomorrow")
+                return@withLock
+            }
+            val p = petDao.get() ?: return@withLock
+            val stake = amount.coerceIn(0, minOf(DICE_MAX_STAKE, p.gold))
+            if (stake <= 0) {
+                _tavernMsg.tryEmit("You need gold on the table to play")
+                return@withLock
+            }
+
+            val roll = kotlin.random.Random.nextInt(1, 21)
+            val net = when {
+                roll == 20 -> (stake * DICE_JACKPOT_MULT).toInt()
+                roll >= 11 -> (stake * DICE_WIN_MULT).toInt()
+                else -> -stake
+            }
+            petDao.upsert(p.copy(gold = (p.gold + net).coerceAtLeast(0)))
+            strongholdDao.upsert(s.copy(diceBetsDay = t, diceBetsCount = used + 1))
+
+            com.addhd.app.util.Sound.play(appContext, com.addhd.app.util.Sfx.SFX_DICE_ROLL)
+            if (net > 0) com.addhd.app.util.Sound.play(appContext, com.addhd.app.util.Sfx.SFX_DICE_CRIT)
+            _betResults.tryEmit(
+                BetResult(roll, stake, net, roll == 20, (DICE_BETS_PER_DAY - used - 1).coerceAtLeast(0)),
             )
         }
     }
@@ -1856,7 +2059,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         com.addhd.app.util.Haptics.runePop(appContext)   // tactile pop on a No-Brainer quick win
         emitCombatForWin(baseXp = 20, energy = 1, minor = true)
         awardXp(20)
-        creditCampaignProgress()
+        // No chapter credit: a No-Brainer clears a dungeon room. The chapter advances only when
+        // the room-10 boss falls, inside emitCombatForWin.
     }
 
     fun autoScheduleToday(startHour: Int = 9, endHour: Int = 18) = viewModelScope.launch {
@@ -1998,10 +2202,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val p = petDao.get() ?: PetEntity()
         val roll = kotlin.random.Random.nextInt(100)
         val reward: BlessingReward = if (roll < BLESSING_GEAR_CHANCE_PCT) {
-            val dungeonIndex = Campaign.questIndex(p.xp, p.level)
+            val dungeonIndex = Campaign.questIndex(p.roomsCleared)
             val owned = lootDao.allNow().map { it.defId }.toSet()
             val seed = Campaign.totalLifetimeXp(p.xp, p.level) + lootDao.count() + roll
-            val drop = LootTable.rollDrop(dungeonIndex, seed, owned)
+            val drop = LootTable.rollDrop(com.addhd.app.campaign.Campaign.lootTierFor(dungeonIndex), seed, owned)
             lootDao.insert(LootEntity(defId = drop.id, acquiredAtMillis = now()))
             val tier = LootTable.rarityOf(drop).name.lowercase().replaceFirstChar { it.uppercase() }
             BlessingReward(
@@ -2093,9 +2297,73 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // Every existing readout was a 7-day window or a live count over purgeable rows, so after six
     // months the app knew no more about you than in week one. These only ever grow.
 
+    /**
+     * Momentum as it stands right now — the stored value with idle-day decay already applied, so
+     * the UI shows what you'd actually earn with rather than a stale number from your last active
+     * day. Recomputed whenever the pet row changes (and on every app launch).
+     */
+    data class Momentum(val value: Int, val atRisk: Int, val bonusPct: Int, val max: Int)
+
+    val momentum: StateFlow<Momentum> = pet.map { p ->
+        val v = RewardEngine.effectiveMomentum(p?.momentum ?: 0, p?.momentumDay ?: 0L, today())
+        Momentum(
+            value = v,
+            atRisk = RewardEngine.momentumAtRisk(v),
+            // Taken straight from the points (the bonus IS +1% per point). Deriving it from the
+            // float multiplier instead printed "+14%" at a full 15, because (1.15f - 1f) * 100
+            // lands on 14.999998 and truncates.
+            bonusPct = v,
+            max = RewardEngine.MOMENTUM_MAX,
+        )
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000),
+        Momentum(0, 0, 0, RewardEngine.MOMENTUM_MAX),
+    )
+
     /** Lifetime completed focus minutes. */
     val lifetimeFocusMinutes: StateFlow<Int> =
         focusDao.lifetimeMinutes().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    // ---- Monthly consistency ----
+    /**
+     * Which of the last [CONSISTENCY_DAYS] days saw any activity at all.
+     *
+     * Deliberately offered INSTEAD of leaning on a streak. A streak is a single fragile number —
+     * alive, or zero — so after one missed day the only thing it can tell you is that you failed.
+     * A month of filled squares reads as "I showed up 18 times", which is both truer and far more
+     * usable for a pattern that's bursty by nature.
+     *
+     * "Activity" spans all four things the app records — a cleared quest, a focus block, a ritual
+     * check, a status log — so no single habit decides whether the day counts.
+     */
+    data class Consistency(val days: List<Boolean>, val activeCount: Int, val total: Int)
+
+    val consistency: StateFlow<Consistency> = run {
+        val since = LocalDate.now().minusDays(CONSISTENCY_DAYS.toLong())
+            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        combine(
+            tasks,
+            focusDao.completedMillisSince(since),
+            habitChecks,
+            moods,
+        ) { taskList, focusMillis, checks, moodList ->
+            val zone = ZoneId.systemDefault()
+            fun dayOf(millis: Long) = java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate().toEpochDay()
+            val active = HashSet<Long>()
+            taskList.forEach { t -> if (t.done) t.completedAtEpochDay?.let(active::add) }
+            focusMillis.forEach { active.add(dayOf(it)) }
+            checks.forEach { active.add(it.epochDay) }
+            moodList.forEach { active.add(dayOf(it.epochMillis)) }
+
+            val today = today()
+            val first = today - CONSISTENCY_DAYS + 1
+            val days = (first..today).map { it in active }
+            Consistency(days, days.count { it }, days.size)
+        }
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000),
+        Consistency(emptyList(), 0, CONSISTENCY_DAYS),
+    )
 
     data class AllTime(
         val sinceEpochDay: Long,     // 0 = unknown/new save

@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.addhd.app.ui.components.spoken
 import com.addhd.app.ui.components.decorative
 import com.addhd.app.ui.components.describedAs
 import com.addhd.app.data.TaskEntity
@@ -144,7 +145,7 @@ fun TasksScreen(
                     FilledTonalButton(
                         onClick = { drawFromJar() },
                         shape = RoundedCornerShape(Radii.button),
-                    ) { Text("🎲 Roll for Priority") }
+                    ) { Text("🎲 Roll for Priority", modifier = Modifier.spoken("Roll for Priority")) }
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -221,6 +222,7 @@ fun TasksScreen(
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(
                             "🎲 Fate Directs You",
+                            modifier = Modifier.spoken("Fate Directs You"),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
@@ -246,13 +248,13 @@ fun TasksScreen(
                                     containerColor = MaterialTheme.colorScheme.onPrimary,
                                     contentColor = MaterialTheme.colorScheme.primary,
                                 ),
-                            ) { Text("Done ✓", fontWeight = FontWeight.Bold) }
+                            ) { Text("Done ✓", modifier = Modifier.spoken("Done"), fontWeight = FontWeight.Bold) }
                             OutlinedButton(
                                 onClick = { drawFromJar() },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
                                 border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimary),
-                            ) { Text("🎲 Reroll") }
+                            ) { Text("🎲 Reroll", modifier = Modifier.spoken("Reroll")) }
                         }
                         Spacer(Modifier.height(6.dp))
                         TextButton(

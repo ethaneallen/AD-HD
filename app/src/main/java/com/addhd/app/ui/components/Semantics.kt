@@ -28,3 +28,31 @@ fun Modifier.decorative(): Modifier = this.clearAndSetSemantics { }
 /** Replace this element's announcement with [label]. For emoji that carry meaning on their own. */
 fun Modifier.describedAs(label: String): Modifier =
     this.semantics { contentDescription = label }
+
+/**
+ * Matches emoji, variation selectors and keycap marks.
+ *
+ * Kept deliberately broad: a false positive costs a stripped character in a spoken string, while a
+ * false negative costs "crossed swords" being read out mid-sentence.
+ */
+private val EMOJI = Regex(
+    "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{2B00}-\\x{2BFF}\\x{FE0F}\\x{20E3}\\x{2190}-\\x{21FF}]+",
+)
+
+/**
+ * The same text with emoji removed and whitespace tidied — what a screen reader should SAY for a
+ * label like "⚔️ Current Quest".
+ */
+fun String.withoutEmoji(): String = EMOJI.replace(this, " ").replace(Regex("\\s+"), " ").trim()
+
+/**
+ * Keep the emoji on screen, drop it from the announcement.
+ *
+ * Most emoji in this app are baked into the middle of a label rather than sitting in their own
+ * element, so they can't simply be hidden — TalkBack reads characters, and announces
+ * "⚔️ Current Quest" as "crossed swords Current Quest". Setting an explicit description on the
+ * node overrides what's spoken while leaving the visible string untouched.
+ */
+fun Modifier.spoken(text: String): Modifier = this.semantics {
+    contentDescription = text.withoutEmoji()
+}

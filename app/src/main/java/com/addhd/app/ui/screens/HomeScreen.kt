@@ -48,6 +48,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.addhd.app.ui.components.describedAs
+import com.addhd.app.ui.components.spoken
+import com.addhd.app.ui.components.decorative
 import com.addhd.app.campaign.BossType
 import com.addhd.app.campaign.HeroClass
 import com.addhd.app.coach.Coach
@@ -72,6 +75,10 @@ fun HomeScreen(
     questName: String,
     questBoss: String,
     roomInQuest: Int,
+    /** Room-10 boss fight. 0 max HP hides the fight UI (pre-v22 state / loading). */
+    bossMaxHp: Int = 0,
+    bossHpRemaining: Int = 0,
+    heroBossDamage: Int = 0,
     totalRooms: Int,
     flavorHeadline: String,
     flavorLine: String,
@@ -90,6 +97,8 @@ fun HomeScreen(
     /** True once this quest has been explicitly committed to, which changes the card's tense. */
     resumeIsActive: Boolean = false,
     onStillOnIt: (TaskEntity) -> Unit = {},
+    /** The earned-and-losable XP multiplier. Null hides the card. */
+    momentum: AppViewModel.Momentum? = null,
 ) {
     val scroll = rememberScrollState()
     val heroEmoji = heroClass?.emoji ?: "🧙"
@@ -160,7 +169,10 @@ fun HomeScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSecondary,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            // Stripping the emoji would leave a bare number; say what it counts.
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .describedAs("${p.gold} gold"),
                         )
                     }
                     Spacer(Modifier.width(8.dp))
@@ -174,7 +186,9 @@ fun HomeScreen(
                             "🛡️ $cleanStreakDays",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .describedAs("$cleanStreakDays day clean streak"),
                         )
                     }
                 }
@@ -253,6 +267,7 @@ fun HomeScreen(
         ) {
             Text(
                 "🕯️  Seek Refuge in the Sanctuary",
+                modifier = Modifier.spoken("Seek Refuge in the Sanctuary"),
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -304,9 +319,75 @@ fun HomeScreen(
             StatChip("focus min", focusMinutesToday, Modifier.weight(1f))
         }
 
-        SectionCard {
+        // Momentum — the one number here with something at stake. Stated with the consequence
+        // attached, because a bonus you can't see yourself losing exerts no pull at all.
+        momentum?.let { m ->
+            SectionCard {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "⚡",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(end = 10.dp).decorative(),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Momentum ${m.value}/${m.max}  ·  +${m.bonusPct}% XP",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            when {
+                                m.value >= m.max ->
+                                    "Maxed. A full idle day costs you ${m.atRisk}."
+                                m.value == 0 ->
+                                    "Earn anything today to start it climbing."
+                                else ->
+                                    "+1 for acting today · −${m.atRisk} if the day passes unused."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
+        // One fight holds the floor at a time.
+        //
+        // The dungeon (rooms + its own boss) and the campaign (chapters + a chapter boss) are
+        // separate systems that both narrate in the same voice. Side by side, "Wight blocks the
+        // way" and "The boss stands in your way!" read as one battle with a contradictory button.
+        // When the campaign chapter is at its gate, the dungeon steps back to a single quiet line:
+        // the chapter boss is the rarer, authored moment, so it gets the spotlight.
+        val campaignBossHasTheFloor = activeQuest?.bossReady == true && !activeQuest.campaignDone
+        if (campaignBossHasTheFloor) {
+            SectionCard {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "⚔️ $questName",
+                        modifier = Modifier.weight(1f).spoken("Dungeon: $questName"),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Room $roomInQuest / $totalRooms",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = com.addhd.app.ui.theme.GoldText.onCard,
+                    )
+                }
+                if (roomInQuest >= totalRooms && bossMaxHp > 0) {
+                    val hp = if (bossHpRemaining > 0) bossHpRemaining else bossMaxHp
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "$questBoss waiting · $hp / $bossMaxHp HP",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else SectionCard {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("⚔️ Current Quest", style = MaterialTheme.typography.titleMedium)
+                Text("⚔️ Current Quest", modifier = Modifier.spoken("⚔️ Current Quest"), style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Room $roomInQuest / $totalRooms",
                     style = MaterialTheme.typography.titleMedium,
@@ -324,14 +405,53 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(8.dp))
             val roomsToBoss = (totalRooms - roomInQuest).coerceAtLeast(0)
-            Text(
-                if (roomInQuest >= totalRooms)
-                    "⚠️ Warlord ahead: $questBoss. Finish a task to strike!"
-                else
-                    "$roomsToBoss ${if (roomsToBoss == 1) "room" else "rooms"} to the warlord: $questBoss. Every task cleared advances you.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (roomInQuest >= totalRooms && bossMaxHp > 0) {
+                // The boss has HP, so show the fight rather than a one-line warning. The hit count
+                // is the honest bit: it tells you the climax takes several wins, and that raising
+                // STR (medium/big quests) is what shortens it.
+                val hp = if (bossHpRemaining > 0) bossHpRemaining else bossMaxHp
+                val hitsLeft = if (heroBossDamage > 0) {
+                    ((hp + heroBossDamage - 1) / heroBossDamage)
+                } else {
+                    0
+                }
+                Text(
+                    "⚠️ $questBoss blocks the way",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = com.addhd.app.ui.theme.GoldText.onCard,
+                )
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { (hp.toFloat() / bossMaxHp).coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(14.dp)
+                        .describedAs("$questBoss at $hp of $bossMaxHp hit points"),
+                    color = MaterialTheme.colorScheme.error,
+                    trackColor = com.addhd.app.ui.theme.RaisedSurface.color,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    // Quote the floor, not a flat figure: a win also adds 3 per effort point and
+                    // doubles on a crit, so "you hit for 11" would understate a 28-damage swing.
+                    "$hp / $bossMaxHp HP  ·  you hit for $heroBossDamage+" +
+                        if (hitsLeft > 0) {
+                            "  ·  up to $hitsLeft more ${if (hitsLeft == 1) "win" else "wins"} to fell it"
+                        } else {
+                            ""
+                        },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "$roomsToBoss ${if (roomsToBoss == 1) "room" else "rooms"} to the warlord: " +
+                        "$questBoss. Every task cleared advances you.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         // Campaign picker: shown when no campaign is active yet (fresh start, or the current
@@ -340,7 +460,7 @@ fun HomeScreen(
             val choices = campaigns.filter { !it.completed && !it.active }
             if (choices.isNotEmpty()) {
                 SectionCard {
-                    Text("⚔️ Choose your campaign", style = MaterialTheme.typography.titleMedium)
+                    Text("⚔️ Choose your campaign", modifier = Modifier.spoken("⚔️ Choose your campaign"), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Pick a long-term adventure. Completing real tasks advances its chapters; defeat each boss to move on.",
@@ -417,9 +537,16 @@ fun HomeScreen(
                             )
                         }
                     } else {
+                        // The gate counts dungeon quests now, so say so — "2 more tasks" would be
+                        // flatly wrong when each tick costs ten rooms and a boss kill.
                         val left = (q.tasksRequired - q.tasksDone).coerceAtLeast(0)
                         Text(
-                            "$left more ${if (left == 1) "task" else "tasks"} to reach the chapter boss.",
+                            if (left == 1) {
+                                "Clear the dungeon quest ahead — its boss falling advances this chapter."
+                            } else {
+                                "$left more dungeon quests to reach the chapter boss " +
+                                    "(ten rooms and a boss apiece)."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -582,7 +709,7 @@ private fun QuickStrikeDialog(
     val preset = remember { noBrainers.random() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("⚔️ Quick Strike") },
+        title = { Text("⚔️ Quick Strike", modifier = Modifier.spoken("⚔️ Quick Strike")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (tinyTasks.isNotEmpty()) {

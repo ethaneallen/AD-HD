@@ -194,6 +194,14 @@ interface FocusDao {
     @Query("SELECT COALESCE(SUM(minutes),0) FROM focus_sessions WHERE completed = 1")
     fun lifetimeMinutes(): Flow<Int>
 
+    /**
+     * Raw timestamps of completed blocks since [since], for the consistency grid. Returns millis
+     * rather than a day number so the caller can bucket them in the LOCAL time zone — SQLite's
+     * date functions are UTC and would mis-file anything near midnight.
+     */
+    @Query("SELECT epochMillis FROM focus_sessions WHERE completed = 1 AND epochMillis >= :since")
+    fun completedMillisSince(since: Long): Flow<List<Long>>
+
     @Query("SELECT COUNT(*) FROM focus_sessions WHERE completed = 1")
     suspend fun completedCountNow(): Int
 

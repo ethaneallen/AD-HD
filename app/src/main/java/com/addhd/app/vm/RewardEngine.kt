@@ -3,6 +3,7 @@ package com.addhd.app.vm
 import android.content.Context
 import com.addhd.app.campaign.BossType
 import com.addhd.app.campaign.Campaign
+import com.addhd.app.campaign.CombatFlavor
 import com.addhd.app.campaign.HeroClass
 import com.addhd.app.campaign.HeroStats
 import com.addhd.app.campaign.LootTable
@@ -173,7 +174,9 @@ class RewardEngine private constructor(appContext: Context) {
         // bigQuest rides the SAME pet write as the XP award rather than taking a second
         // read-modify-write on the row, so STR can't be lost to a race.
         awardXp(baseXp, comboMult = comboMult, bigQuest = task.energy >= 2)
-        if (task.parentId == null) creditCampaignProgress()
+        // NB: the chapter is NOT credited here any more. A task clears a dungeon room; the chapter
+        // advances only when that quest's room-10 boss falls (see [emitCombatForWin]). The two used
+        // to run in parallel, which put two unrelated bosses on Home at the same time.
         // Shadow Specter interceptor: only TIME-BLOCKED tasks harm the phantom (no-op otherwise).
         if (task.blockStartMin != null) {
             damageTypedBoss(BossType.SHADOW_SPECTER, BossType.SHADOW_SPECTER_TIMED)
@@ -194,14 +197,31 @@ class RewardEngine private constructor(appContext: Context) {
     ) {
         val xpBuff = equippedBuff(com.addhd.app.campaign.BuffKind.XP_GENERATION)
         val goldBuff = equippedBuff(com.addhd.app.campaign.BuffKind.GOLD_GENERATION)
+        // The bard's commission: a timed, bought-with-gold XP multiplier. Read outside the lock
+        // (like the artifact buffs) since it's a plain timestamp comparison.
+        val bardMult = if ((db.strongholdDao().get()?.bardExpiresAtMillis ?: 0L) > now()) {
+            BARD_XP_MULT
+        } else {
+            1.0
+        }
         var leveledUp = false
         xpMutex.withLock {
             val p = petDao.get() ?: PetEntity()
             val t = today()
             val potionMult = if (_xpPotionPrimed.value) { _xpPotionPrimed.value = false; POTION_XP_MULT } else 1.0
-            val mult = streakMultiplier(cleanDays(p.cleanStreakStartEpochDay, t))
+            // Momentum: settle any idle-day decay, then credit today. The multiplier now comes
+            // from a number the hero actually earns, instead of from how long ago the clean streak
+            // started — which climbed on its own and could never be lost.
+            val settled = effectiveMomentum(p.momentum, p.momentumDay, t)
+            val momentum = if (p.momentumDay == t) {
+                settled                                   // already credited today
+            } else {
+                (settled + MOMENTUM_GAIN_PER_ACTIVE_DAY).coerceAtMost(MOMENTUM_MAX)
+            }
+            val mult = momentumMultiplier(momentum)
             val tierMult = WorldTier.scalar(p.worldTier)
-            var xp = p.xp + Math.round(amount * mult * tierMult * (1.0 + xpBuff) * potionMult * comboMult).toInt()
+            var xp = p.xp +
+                Math.round(amount * mult * tierMult * (1.0 + xpBuff) * potionMult * comboMult * bardMult).toInt()
             var level = p.level
             while (xp >= level * 100) { xp -= level * 100; level++ }
             leveledUp = level > p.level
@@ -215,6 +235,7 @@ class RewardEngine private constructor(appContext: Context) {
                 p.copy(
                     xp = xp, level = level, lastFedEpochDay = t, streakDays = streak, gold = gold,
                     totalBigQuestsCompleted = p.totalBigQuestsCompleted + if (bigQuest) 1 else 0,
+                    momentum = momentum, momentumDay = t,
                 )
             )
         }
@@ -258,31 +279,101 @@ class RewardEngine private constructor(appContext: Context) {
         val stats = combatStatsNow(p)
         val hero = HeroClass.from(p.heroClass)
 
-        val roomBeforeWin = Campaign.roomInQuest(p.xp, p.level)
+        val roomBeforeWin = Campaign.roomInQuest(p.roomsCleared)
         val isBossRoom = roomBeforeWin >= Campaign.TOTAL_ROOMS
+        val questIdx = Campaign.questIndex(p.roomsCleared)
+        val quest = Campaign.currentQuest(p.roomsCleared)
 
         val seed = Campaign.totalLifetimeXp(p.xp, p.level) + energy
         val crit = (seed * 7) % 100 < stats.critChancePct
         val dmg = (stats.bossDamage + energy * 3).let { if (crit) it * 2 else it }
-        val enemy = if (isBossRoom) Campaign.currentQuest(p.xp, p.level).boss else Campaign.enemyFor(seed)
+        val enemy = if (isBossRoom) quest.boss else Campaign.enemyFor(seed, p.roomsCleared)
+
+        // ---- The boss actually has HP now ----
+        // Previously arriving at room 10 meant the next completed task killed the boss outright,
+        // so STR (boss damage) and WIS (crit) were computed and then thrown away. The climax was
+        // indistinguishable from clearing room 3. Now the damage lands on something.
+        var bossFelled = false
+        var bossHpAfter = 0
+        var bossMax = 0
+        if (isBossRoom) {
+            bossMax = quest.bossMaxHp
+            // Arm the encounter on arrival, or on moving to a different quest's boss.
+            val armed = if (p.bossQuestIndex == questIdx && p.bossHpRemaining > 0) {
+                p.bossHpRemaining
+            } else {
+                bossMax
+            }
+            bossHpAfter = (armed - dmg).coerceAtLeast(0)
+            bossFelled = bossHpAfter <= 0
+            petDao.upsert(
+                petDao.get()?.copy(
+                    bossQuestIndex = questIdx,
+                    // Clear the encounter on a kill so the next quest's boss arms fresh.
+                    bossHpRemaining = if (bossFelled) 0 else bossHpAfter,
+                    // Felling the boss is what clears room 10 and moves the campaign on.
+                    roomsCleared = if (bossFelled) p.roomsCleared + 1 else p.roomsCleared,
+                ) ?: return
+            )
+            // Felling the room-10 boss completes the dungeon quest, and THAT is what advances the
+            // campaign chapter. Ten rooms -> boss -> +1 chapter -> (when the gate fills) the
+            // chapter boss.
+            if (bossFelled) creditCampaignProgress()
+        } else {
+            // Rooms 1-9: a win clears a room — a quest, a No-Brainer, or a focus block, i.e.
+            // every path that reaches this encounter. Read from a counter now rather than
+            // inferred from the XP total.
+            petDao.upsert(petDao.get()?.copy(roomsCleared = p.roomsCleared + 1) ?: return)
+        }
 
         val baseLine = if (minor) Campaign.minorCombatLine(seed, enemy, dmg, baseXp)
         else Campaign.combatLine(hero, enemy, dmg, baseXp)
-        val line = if (crit) "CRIT!  $baseLine" else baseLine
+        val line = buildString {
+            if (crit) {
+                // A named effect plus an authored line, instead of a bare "CRIT!" every time.
+                append(com.addhd.app.campaign.CombatFlavor.pick(CombatFlavor.criticalEffects, seed))
+                append("!  ")
+            }
+            append(baseLine)
+            if (crit) {
+                append("  ")
+                append(CombatFlavor.pick(CombatFlavor.criticalHit, seed / 3))
+            }
+            if (isBossRoom) {
+                if (bossFelled) {
+                    append("  ")
+                    append(CombatFlavor.pick(CombatFlavor.victory, seed))
+                } else {
+                    // Say what the damage DID, then let the boss answer — thirteen silent
+                    // subtractions from a progress bar is not a fight.
+                    append("  $enemy: $bossHpAfter/$bossMax HP left.")
+                    // No article: half these bosses are proper names, and "The Acererak" reads
+                    // as a mistake. "Acererak reaches out…" works for both.
+                    append("  $enemy ")
+                    append(CombatFlavor.legendaryAction(enemy, seed + bossHpAfter))
+                    append(".")
+                }
+            } else if (!minor && (seed % 5) == 0) {
+                // Occasional kill prose on rank-and-file, so rooms 1-9 aren't one template either.
+                append("  ")
+                append(CombatFlavor.pick(CombatFlavor.kill, seed / 7))
+            }
+        }
 
-        val dropsLoot = isBossRoom || kotlin.random.Random.nextInt(100) < TASK_LOOT_DROP_CHANCE_PCT
+        // Loot drops on the KILL, not merely on reaching the boss room, or every swing at a
+        // multi-hit boss would pay out.
+        val dropsLoot = bossFelled || kotlin.random.Random.nextInt(100) < TASK_LOOT_DROP_CHANCE_PCT
         if (dropsLoot) {
-            val dungeonIndex = Campaign.questIndex(p.xp, p.level)
             val owned = lootDao.allNow().map { it.defId }.toSet()
-            val drop = LootTable.rollDrop(dungeonIndex, seed + lootDao.count(), owned)
+            val drop = LootTable.rollDrop(Campaign.lootTierFor(questIdx), seed + lootDao.count(), owned)
             lootDao.insert(LootEntity(defId = drop.id, acquiredAtMillis = now()))
             com.addhd.app.util.Haptics.diceCrit(ctx)
             _combat.tryEmit(
                 AppViewModel.CombatEvent(
-                    line = if (isBossRoom) "$line  You clear the room and claim ${drop.emoji} ${drop.name}!"
+                    line = if (bossFelled) "$line  $enemy falls! You claim ${drop.emoji} ${drop.name}!"
                     else "$line  Loot! ${drop.emoji} ${drop.name}",
                     crit = crit,
-                    bossDefeated = isBossRoom,
+                    bossDefeated = bossFelled,
                     lootName = drop.name,
                     lootEmoji = drop.emoji,
                 )
@@ -298,8 +389,12 @@ class RewardEngine private constructor(appContext: Context) {
             val active = campaignDao.campaigns().first().firstOrNull { it.active && !it.completed }
                 ?: return@withLock
             val current = campaignDao.firstOpenMilestone(active.campaignKey) ?: return@withLock
+            // Gate counts DUNGEON QUESTS now, not tasks — this is only called when a room-10 boss
+            // falls. See [Campaign.chapterGateInQuests].
             val gate = WorldTier.effectiveGate(
-                current.tasksRequired, petDao.get()?.worldTier ?: 1, gateReductionNow(),
+                WorldTier.chapterGateInQuests(current.tasksRequired),
+                petDao.get()?.worldTier ?: 1,
+                gateReductionNow(),
             )
             if (current.tasksDone >= gate) return@withLock
             val bumped = (current.tasksDone + 1).coerceAtMost(gate)
@@ -342,6 +437,45 @@ class RewardEngine private constructor(appContext: Context) {
 
         fun streakMultiplier(cleanDays: Int): Float =
             1.0f + (cleanDays.coerceIn(0, 15) * 0.01f)
+
+        // ---- Momentum ----
+        /** Ceiling, which is also the max XP bonus percentage. */
+        const val MOMENTUM_MAX = 15
+        /** Gained per day on which the hero earns anything at all. */
+        const val MOMENTUM_GAIN_PER_ACTIVE_DAY = 1
+        /** LOST per fully idle day. Deliberately harsher than the gain: ground is easier to lose. */
+        const val MOMENTUM_LOSS_PER_IDLE_DAY = 2
+
+        /**
+         * Momentum as of [today], after charging for any idle days since [lastActiveDay].
+         *
+         * Today itself is never counted as idle — you still have the whole day to act, and docking
+         * someone at 00:01 for a day they haven't lived yet would be both wrong and dispiriting.
+         * So the decay covers only whole days that have already passed unused.
+         */
+        fun effectiveMomentum(stored: Int, lastActiveDay: Long, today: Long): Int {
+            if (lastActiveDay <= 0L) return stored.coerceIn(0, MOMENTUM_MAX)
+            val idleDays = (today - lastActiveDay - 1).coerceAtLeast(0)
+            return (stored - idleDays.toInt() * MOMENTUM_LOSS_PER_IDLE_DAY).coerceIn(0, MOMENTUM_MAX)
+        }
+
+        /** +1% XP per point of momentum, so the cap pays +15%. */
+        fun momentumMultiplier(momentum: Int): Float =
+            1.0f + (momentum.coerceIn(0, MOMENTUM_MAX) * 0.01f)
+
+        /** How much momentum a fully idle day from now would cost — the stake, shown in the UI. */
+        fun momentumAtRisk(current: Int): Int =
+            minOf(current, MOMENTUM_LOSS_PER_IDLE_DAY)
+
+        // ---- The bard's commission ----
+        /**
+         * XP multiplier while a commissioned bard is playing.
+         *
+         * Sized to be felt on the very next completion — which is the whole point, and exactly
+         * what the inn it replaced failed at. +50% on a 25-XP quest is visible immediately,
+         * whereas the inn's +2% needed thousands of quests to repay its own price.
+         */
+        const val BARD_XP_MULT = 1.5
 
         @Volatile private var INSTANCE: RewardEngine? = null
 
